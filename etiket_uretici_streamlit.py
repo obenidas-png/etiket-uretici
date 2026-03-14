@@ -12,115 +12,113 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle, PageBreak
 
-# --- KONFİGÜRASYON ---
+# --- SAYFA VE FONT AYARLARI ---
 st.set_page_config(page_title="Etiket Üretici", page_icon="🏷️", layout="centered")
 
 LABEL_W = 6.2 * cm
 LABEL_H = 3.2 * cm
 COLS = 3
 
-# Font Kaydı
+# Fontları kaydet (Font dosyalarının sistemde yüklü olduğunu varsayarsak)
 try:
     pdfmetrics.registerFont(TTFont("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
     pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"))
 except:
     pass
 
-# Stil Tanımları - Leading (satır aralığı) artırıldı
-BASE_STYLE = ParagraphStyle("base", fontName="DejaVuSans", fontSize=7.5, leading=9)
+# Stil ayarları (Çakışmayı önlemek için leading değeri düşürüldü)
+BASE_STYLE = ParagraphStyle("base", fontName="DejaVuSans", fontSize=7.5, leading=8)
 BOLD_STYLE = ParagraphStyle("bold", parent=BASE_STYLE, fontName="DejaVuSans-Bold")
 
-# --- VERİ İŞLEME ARAÇLARI ---
+# --- VERİ İŞLEME FONKSİYONLARI ---
 
 def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
-def normalize_lines(text: str) -> List[str]:
-    # Alt bilgi ve teknik gürültüleri temizle
-    text = re.sub(r"https?://\S+|Shipentegra|printmultipleorders|\d{1,2}/\d{1,2}", "", text, flags=re.IGNORECASE)
-    return [clean_text(x) for x in text.splitlines() if clean_text(x)]
-
 def find_customer_name(page_text: str) -> str:
-    lines = normalize_lines(page_text)
-    # Shipentegra PDF'inde isimler genellikle "Alıcı" kelimesinden hemen sonraki satırlarda gelir 
+    """PDF tablosundaki parçalı isimleri birleştirir."""
+    lines = [clean_text(l) for l in page_text.splitlines() if clean_text(l)]
     for i, line in enumerate(lines):
         if "Alıcı" in line:
             name_parts = []
             for offset in range(1, 4):
                 if i + offset < len(lines):
                     candidate = lines[i + offset]
-                    # Tarih, Adres (Street, Ave) veya Posta kodu görünce dur 
-                    if re.search(r"\d{4}-\d{2}-\d{2}|street|ave|road|dr\b|\b[A-Z]{2}\d+", candidate, re.IGNORECASE):
+                    # Tarih veya adres satırına geldiysek dur
+                    if re.search(r"\d{4}-\d{2}-\d{2}|street|ave|road|house|barking|ashburn|buffalo|austin|cookeville|belfast", candidate, re.IGNORECASE):
                         break
-                    if candidate and not any(ch.isdigit() for ch in candidate):
+                    if not any(ch.isdigit() for ch in candidate):
                         name_parts.append(candidate)
             return " ".join(name_parts).strip()
     return ""
 
-def normalize_size(block: str) -> str:
-    # Kesirli ölçülerdeki ($) işaretini temizler [cite: 15, 29, 63]
-    clean_block = block.replace("$", "")
-    m = re.search(r"Ring size\s*:\s*([^$\n\r]+)", clean_block, re.IGNORECASE)
-    if not m: return ""
-    # "8 1/4 US" gibi formatları yakalar [cite: 15]
-    m2 = re.search(r"(\d+(?:\s+\d+/\d+)?\s*US)", m.group(1), re.IGNORECASE)
-    return m2.group(1).upper().strip() if m2 else clean_text(m.group(1))
-
-def build_model(title: str) -> str:
-    t = title.lower()
-    if "resizing service" in t: return "YENİLEME" # [cite: 135]
-    if "oval solitaire" in t: return "OVAL TEKTAŞ" # [cite: 119]
-    parts = []
-    if "matte" in t: parts.append("MAT") # [cite: 9]
-    if "bevel" in t: parts.append("ÇATI") # [cite: 9]
-    elif "dome" in t: parts.append("BOMBE") # [cite: 26]
-    elif "flat" in t: parts.append("DÜZ") # [cite: 58]
-    if "white" in t: parts.append("BEYAZ") # [cite: 9]
-    elif "yellow" in t: parts.append("SARI") # [cite: 27]
-    elif "rose" in t or "pink" in t: parts.append("ROSE")
-    return " ".join(parts).strip()
-
-def parse_page(page_text: str) -> List[Dict[str, str]]:
-    customer = find_customer_name(page_text)
-    order_no = re.search(r"Sipariş Numarası\s*(\d+)", page_text, re.IGNORECASE)
-    order_no = order_no.group(1) if order_no else ""
+def parse_product_block(block: str) -> Dict:
+    """Tek bir ürün bloğundan detayları ayıklar."""
+    title = clean_text(block.split("\n")[0])
+    is_resize = "resizing service" in title.lower()
     
-    # Adet: ifadesini ayraç olarak kullan [cite: 8, 25, 41]
-    product_blocks = re.split(r"(?=Adet:\s*\d+)", page_text)
-    labels = []
-    for block in product_blocks:
-        if "Adet:" not in block: continue
-        # Başlık Adet:'den sonraki ilk satırdır
-        title = normalize_lines(block.split("Adet:")[1])[0] if "Adet:" in block else ""
-        is_resize = "resizing service" in title.lower()
-        
-        # Genişlik tespiti [cite: 10, 30, 46]
-        width = ""
-        w_match = re.search(r"Width\s*:\s*(\d+mm)", block, re.IGNORECASE)
-        if w_match: width = w_match.group(1).upper()
-        elif not is_resize:
-            w_match2 = re.search(r"(\d+mm)", block, re.IGNORECASE)
-            if w_match2: width = w_match2.group(1).upper()
+    # Model tespiti
+    model = "YENİLEME" if is_resize else ""
+    if "oval solitaire" in title.lower(): model = "OVAL TEKTAŞ"
+    else:
+        m_parts = []
+        if "matte" in title.lower(): m_parts.append("MAT")
+        if "bevel" in title.lower(): m_parts.append("ÇATI")
+        elif "dome" in title.lower(): m_parts.append("BOMBE")
+        elif "flat" in title.lower(): m_parts.append("DÜZ")
+        if "white" in title.lower(): m_parts.append("BEYAZ")
+        elif "yellow" in title.lower(): m_parts.append("SARI")
+        elif "rose" in title.lower() or "pink" in title.lower(): m_parts.append("ROSE")
+        if not model: model = " ".join(m_parts).strip()
 
-        labels.append({
-            "siparis_no": order_no,
-            "musteri": customer,
-            "genislik": width,
-            "model": build_model(block),
-            "olcu": normalize_size(block),
-            "lazer": clean_text(block.split("Personalization:")[1].split("\n")[0]) if "Personalization:" in block else "", # [cite: 31, 64]
-            "not": "YENİLEME" if is_resize else ("Oval Tektaş" if "oval" in title.lower() else "")
-        })
-    return labels
+    # Ölçü ve Genişlik
+    size = ""
+    size_match = re.search(r"Ring size:\s*([\d\s/]+US)", block.replace("$", ""), re.IGNORECASE)
+    if size_match: size = size_match.group(1).strip()
+    
+    width = ""
+    width_match = re.search(r"(\d+mm)", block, re.IGNORECASE)
+    if width_match: width = width_match.group(1).upper()
 
-# --- PDF OLUŞTURMA ---
+    # Lazer
+    lazer = ""
+    if "Personalization:" in block:
+        lazer = clean_text(block.split("Personalization:")[1].split("https")[0])
+        lazer = lazer.replace("&quot;", "").replace("Font 4-all caps initials", "").strip()
+
+    return {
+        "model": model,
+        "olcu": size,
+        "genislik": "" if is_resize or "oval" in title.lower() else width,
+        "lazer": lazer,
+        "not": "YENİLEME" if is_resize else ("Oval Tektaş" if "oval" in title.lower() else "")
+    }
+
+def parse_pdf(pdf_bytes: bytes) -> List[Dict]:
+    extracted_labels = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text()
+            if not text or "Sipariş Bilgileri" not in text: continue
+            
+            customer = find_customer_name(text)
+            order_no = re.search(r"Sipariş Numarası\s*(\d+)", text)
+            order_no = order_no.group(1) if order_no else ""
+            
+            # Ürünleri Adet: 1 ibaresinden ayır
+            parts = re.split(r"Adet:\s*\d+", text)
+            for part in parts[1:]: # İlk parça başlık kısmıdır
+                details = parse_product_block(part)
+                details.update({"siparis_no": order_no, "musteri": customer})
+                extracted_labels.append(details)
+    return extracted_labels
+
+# --- PDF TABLO OLUŞTURMA ---
 
 def p(text: str, bold: bool = False) -> Paragraph:
-    safe_text = str(text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return Paragraph(safe_text, BOLD_STYLE if bold else BASE_STYLE)
+    return Paragraph(str(text or ""), BOLD_STYLE if bold else BASE_STYLE)
 
-def make_label_table(item: Dict[str, str]) -> Table:
-    # Hücre içindeki üst üste binmeyi engellemek için yükseklikler artırıldı
+def make_label_cell(item: Dict) -> Table:
     data = [
         [p("Sipariş No"), p(item["siparis_no"])],
         [p("Müşteri Adı"), p(item["musteri"], bold=True)],
@@ -130,68 +128,42 @@ def make_label_table(item: Dict[str, str]) -> Table:
         [p("Lazer"), p(item["lazer"], bold=bool(item["lazer"]))],
         [p("Not"), p(item["not"])]
     ]
-    # Sütun genişlikleri: 1.8cm ve 4.2cm (Toplam 6cm)
-    # Satır yükseklikleri: Toplam 3.2cm olacak şekilde dengelendi
-    t = Table(data, colWidths=[1.9 * cm, 4.1 * cm], rowHeights=[0.45 * cm] * 7)
+    # Sabit satır yükseklikleri çakışmayı önler
+    t = Table(data, colWidths=[1.8 * cm, 4.0 * cm], rowHeights=[0.42 * cm] * 7)
     t.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
         ("TOPPADDING", (0, 0), (-1, -1), 1),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]))
     return t
 
-def build_pdf(labels: List[Dict[str, str]]) -> bytes:
+def create_final_pdf(labels: List[Dict]) -> bytes:
     buffer = io.BytesIO()
-    # Kenar boşlukları ayarlandı
-    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=0.4*cm, rightMargin=0.4*cm, topMargin=0.8*cm, bottomMargin=0.8*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, margin=0.5*cm)
     story = []
     
     grid = []
     for i in range(0, len(labels), 3):
-        chunk = labels[i:i+3]
-        row = [make_label_table(item) for item in chunk]
-        while len(row) < 3: row.append("") # Boşlukları doldur
+        row = [make_label_cell(item) for item in labels[i:i+3]]
+        while len(row) < 3: row.append("") 
         grid.append(row)
     
-    # Ana tablo oluşturulurken etiketler arası boşluk için padding eklendi
     main_table = Table(grid, colWidths=[6.3 * cm] * 3, rowHeights=[3.3 * cm] * len(grid))
-    main_table.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    
     story.append(main_table)
     doc.build(story)
     return buffer.getvalue()
 
-# --- STREAMLIT ARAYÜZÜ ---
+# --- STREAMLIT UI ---
 
-st.title("🏷️ Etiket Üretici")
-uploaded = st.file_uploader("Shipentegra PDF Dosyasını Buraya Yükleyin", type=["pdf"])
+st.title("🏷️ Gelişmiş Etiket Üretici")
+file = st.file_uploader("Shipentegra PDF Yükle", type="pdf")
 
-if uploaded:
-    with pdfplumber.open(io.BytesIO(uploaded.read())) as pdf:
-        all_labels = []
-        for page in pdf.pages:
-            text = page.extract_text()
-            if text:
-                all_labels.extend(parse_page(text))
-    
-    if all_labels:
-        st.success(f"✅ {len(all_labels)} Adet Etiket Oluşturuldu.")
-        st.dataframe(all_labels)
-        pdf_bytes = build_pdf(all_labels)
-        st.download_button(
-            label="📥 Etiketleri PDF Olarak İndir",
-            data=pdf_bytes,
-            file_name="hazir_etiketler.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
-    else:
-        st.warning("PDF içerisinde uygun sipariş verisi bulunamadı.")
+if file:
+    labels = parse_pdf(file.read())
+    if labels:
+        st.write(f"✅ {len(labels)} etiket hazırlandı.")
+        st.dataframe(labels)
+        pdf_out = create_final_pdf(labels)
+        st.download_button("📥 Etiketleri PDF İndir", pdf_out, "etiketler.pdf", "application/pdf")
