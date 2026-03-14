@@ -95,43 +95,62 @@ def find_customer_name(page_text: str) -> str:
     lines = normalize_lines(page_text)
     date_re = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
+    def is_stop_line(candidate: str) -> bool:
+        low = candidate.lower()
+        if candidate in {"Sipariş Numarası", "Sipariş Ürünleri"}:
+            return True
+        if date_re.search(candidate):
+            return True
+        if re.search(r"\b(?:GEÇİLDİ|STOK|Ş)\b", candidate):
+            return True
+        if re.search(r"\b(?:GB|US|IE)\b", candidate):
+            return True
+        if is_address_like(candidate):
+            return True
+        if any(x in low for x in ["wedding band", "ring", "gold", "silver", "vermeil", "promise", "service", "solitaire"]):
+            return True
+        return False
+
+    # Primary method: collect consecutive name pieces immediately after the header.
     for i, line in enumerate(lines):
         if line == "Alıcı Adres Sipariş Tarihi Kendi Notum":
+            name_parts = []
             for candidate in lines[i + 1:i + 8]:
-                low = candidate.lower()
-                if candidate in {"Sipariş Numarası", "Sipariş Ürünleri"}:
-                    continue
-                if date_re.search(candidate):
+                if is_stop_line(candidate):
                     break
-                if is_address_like(candidate):
-                    continue
-                if re.search(r"\b(?:GEÇİLDİ|STOK|Ş)\b", candidate):
-                    continue
-                if any(x in low for x in ["wedding band", "ring", "gold", "silver", "vermeil", "promise", "service", "solitaire"]):
-                    continue
-                if len(candidate.split()) >= 2:
-                    return candidate
+                if candidate and not any(ch.isdigit() for ch in candidate):
+                    name_parts.append(candidate)
+                else:
+                    break
+            joined = clean_text(" ".join(name_parts))
+            if joined and len(joined.split()) >= 2:
+                return joined
 
+    # Fallback: scan the top section before the order number and join person-like lines.
     top_section = []
     for line in lines:
         if line == "Sipariş Numarası":
             break
         top_section.append(line)
 
+    current_parts = []
     for line in top_section:
-        low = line.lower()
         if line in {"Sipariş Bilgileri", "Alıcı Adres Sipariş Tarihi Kendi Notum", "Sipariş Ürünleri"}:
             continue
-        if date_re.search(line):
+        if is_stop_line(line):
+            if len(current_parts) >= 2:
+                return clean_text(" ".join(current_parts))
+            current_parts = []
             continue
-        if is_address_like(line):
-            continue
-        if re.search(r"\b(?:GEÇİLDİ|STOK|Ş)\b", line):
-            continue
-        if any(x in low for x in ["wedding band", "ring", "gold", "silver", "vermeil", "promise", "service", "solitaire"]):
-            continue
-        if len(line.split()) >= 2:
-            return line
+        if line and not any(ch.isdigit() for ch in line):
+            current_parts.append(line)
+        else:
+            if len(current_parts) >= 2:
+                return clean_text(" ".join(current_parts))
+            current_parts = []
+
+    if len(current_parts) >= 2:
+        return clean_text(" ".join(current_parts))
 
     return ""
 
