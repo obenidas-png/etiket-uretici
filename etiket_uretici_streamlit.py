@@ -1,5 +1,6 @@
 import io
 import re
+import csv
 from typing import List, Dict
 
 import pdfplumber
@@ -111,7 +112,6 @@ def find_customer_name(page_text: str) -> str:
             return True
         return False
 
-    # Primary method: collect consecutive name pieces immediately after the header.
     for i, line in enumerate(lines):
         if line == "Alıcı Adres Sipariş Tarihi Kendi Notum":
             name_parts = []
@@ -126,7 +126,6 @@ def find_customer_name(page_text: str) -> str:
             if joined and len(joined.split()) >= 2:
                 return joined
 
-    # Fallback: scan the top section before the order number and join person-like lines.
     top_section = []
     for line in lines:
         if line == "Sipariş Numarası":
@@ -257,6 +256,7 @@ def is_resize_listing(product_text: str) -> bool:
         or "ring resizing service" in t
         or "size adjustment for your order" in t
         or "resize listing" in t
+        or "resizing" in t
     )
 
 
@@ -333,6 +333,142 @@ def parse_uploaded_pdf(pdf_bytes: bytes) -> List[Dict[str, str]]:
                 continue
             all_labels.extend(parse_page(text))
     return all_labels
+
+
+def parse_ozellikler(text: str) -> Dict[str, List[str]]:
+    result = {}
+    if not text:
+        return result
+
+    pairs = re.findall(r"Ad:\s*([^,]+),\s*Değer:\s*([^,]+)", text, flags=re.IGNORECASE)
+    for key, value in pairs:
+        k = clean_text(key).lower()
+        v = clean_text(value)
+        result.setdefault(k, []).append(v)
+    return result
+
+
+def extract_widths_from_personalization(text: str) -> List[str]:
+    if not text:
+        return []
+    widths = re.findall(r"(\d+(?:[.,]\d+)?)\s*mm", text, flags=re.IGNORECASE)
+    cleaned = []
+    for w in widths:
+        w = w.replace(",", ".")
+        if w.endswith(".0"):
+            w = w[:-2]
+        cleaned.append(f"{w}MM")
+    return cleaned
+
+
+def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
+    text = csv_bytes.decode("utf-8-sig", errors="replace")
+    sample = text[:4096]
+
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+    except Exception:
+        class SimpleDialect(csv.excel):
+            delimiter = ","
+        dialect = SimpleDialect
+
+    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+    if not reader.fieldnames:
+        return []
+
+    labels = []
+
+    for raw_row in reader:
+        row = {clean_text(k): clean_text(v) for k, v in raw_row.items() if k is not None}
+
+        musteri = row.get("Alıcı", "")
+        siparis_no = row.get("SiparişNumarası", "")
+        urun_adi = row.get("ÜrünAdı", "")
+        ozellikler = row.get("Özellikler", "")
+        adet = row.get("Adet", "1")
+
+        parsed = parse_ozellikler(ozellikler)
+
+        ring_sizes = []
+        if "ring size" in parsed:
+            ring_sizes.extend(parsed["ring size"])
+        if "size for you" in parsed:
+            ring_sizes.extend([f"{parsed['size for you'][0]} US"])
+        if "size for your partner" in parsed:
+            ring_sizes.extend([f"{parsed['size for your partner'][0]} US"])
+
+        ring_sizes = [clean_text(x).upper() for x in ring_sizes]
+
+        widths = []
+        if "width" in parsed:
+            widths.extend([clean_text(x).replace("mm", "MM").replace("Mm", "MM") for x in parsed["width"]])
+
+        personalization_values = parsed.get("personalization", [])
+        lazer = personalization_values[0] if personalization_values else ""
+        lazer = lazer.replace('“', '').replace('”', '').replace('"', '').strip()
+
+        # set of 2 listinglerinde personalization içinden width çek
+        if not widths and lazer:
+            widths = extract_widths_from_personalization(lazer)
+
+        model = build_model(urun_adi)
+        note = ""
+        resize = is_resize_listing(urun_adi) or is_resize_listing(ozellikler)
+
+        if resize:
+            model = "YENİLEME"
+            note = "YENİLEME"
+            widths = [""]
+            if not ring_sizes:
+                ring_sizes = [""]
+        elif model == "OVAL TEKTAŞ":
+            widths = [""]
+            if not ring_sizes:
+                ring_sizes = [""]
+        else:
+            if not widths:
+                m = re.search(r"\b([1-9]|10)\s*mm\b", urun_adi, re.IGNORECASE)
+                if m:
+                    widths = [m.group(0).replace("mm", "MM")]
+            if not ring_sizes:
+                m = re.search(r"(\d+(?:\s+\d+/\d+)?\s*US)", ozellikler, re.IGNORECASE)
+                if m:
+                    ring_sizes = [m.group(1).upper()]
+
+        # Çoklu ürün mantığı
+        pair_mode = (
+            "set of 2" in urun_adi.lower()
+            or "his and her" in urun_adi.lower()
+            or len(ring_sizes) >= 2
+            or len(widths) >= 2
+        )
+
+        if pair_mode:
+            count = max(len(ring_sizes), len(widths), 2)
+            for i in range(count):
+                labels.append({
+                    "siparis_no": siparis_no,
+                    "musteri": musteri,
+                    "genislik": widths[i] if i < len(widths) else "",
+                    "model": model,
+                    "olcu": ring_sizes[i] if i < len(ring_sizes) else "",
+                    "lazer": lazer,
+                    "not": note,
+                    "urun_adi": build_product_hint(urun_adi),
+                })
+        else:
+            labels.append({
+                "siparis_no": siparis_no,
+                "musteri": musteri,
+                "genislik": widths[0] if widths else "",
+                "model": model,
+                "olcu": ring_sizes[0] if ring_sizes else "",
+                "lazer": lazer,
+                "not": note,
+                "urun_adi": build_product_hint(urun_adi),
+            })
+
+    return [x for x in labels if any(str(v).strip() for v in x.values())]
 
 
 def p(text: str, bold: bool = False) -> Paragraph:
@@ -440,9 +576,9 @@ def build_labels_pdf(labels: List[Dict[str, str]]) -> bytes:
 
 
 st.title("Etiket Üretici")
-st.write("Sipariş PDF dosyasını yükleyin. Sistem etiketleri otomatik üretip PDF olarak indirmenizi sağlar.")
+st.write("Sipariş PDF veya CSV dosyasını yükleyin. Sistem etiketleri otomatik üretip PDF olarak indirmenizi sağlar.")
 
-uploaded = st.file_uploader("Sipariş PDF", type=["pdf"])
+uploaded = st.file_uploader("Sipariş dosyası", type=["pdf", "csv"])
 
 with st.expander("Kurallar", expanded=False):
     st.markdown(
@@ -460,15 +596,26 @@ with st.expander("Kurallar", expanded=False):
 - Aynı siparişte 2 ürün varsa 2 etiket
 - Lazer varsa kalın yazılır
 - Resize listing için Model ve Not: YENİLEME
+- CSV yüklenirse müşteri adı ve diğer alanlar doğrudan kolonlardan okunur
         """
     )
 
 if uploaded is not None:
-    pdf_bytes = uploaded.read()
+    file_bytes = uploaded.read()
     try:
-        labels = parse_uploaded_pdf(pdf_bytes)
+        file_name = (uploaded.name or "").lower()
+
+        if file_name.endswith(".csv"):
+            labels = parse_uploaded_csv(file_bytes)
+            file_type = "CSV"
+        else:
+            labels = parse_uploaded_pdf(file_bytes)
+            file_type = "PDF"
+
         st.subheader("Önizleme")
         st.write(f"Toplam etiket: {len(labels)}")
+        st.write(f"Dosya türü: {file_type}")
+
         if labels:
             st.dataframe(labels, use_container_width=True)
             output_pdf = build_labels_pdf(labels)
@@ -480,7 +627,7 @@ if uploaded is not None:
                 use_container_width=True,
             )
         else:
-            st.warning("PDF içinden etiket oluşturulamadı.")
+            st.warning("Dosya içinden etiket oluşturulamadı.")
     except Exception as e:
         st.error(f"Bir hata oluştu: {e}")
 
