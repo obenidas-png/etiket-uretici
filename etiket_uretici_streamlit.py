@@ -1,5 +1,4 @@
 import io
-import math
 import re
 from typing import List, Dict
 
@@ -11,7 +10,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle, Spacer, PageBreak
 
 st.set_page_config(page_title="Etiket Üretici", page_icon="🏷️", layout="centered")
 
@@ -44,59 +43,100 @@ BOLD_STYLE = ParagraphStyle(
     fontName="DejaVuSans-Bold",
 )
 
+ADDRESS_HINTS = [
+    "street", "st ", " st", "ave", "avenue", "road", "rd", "house", "apt", "apartment",
+    "flat", "dr", "drive", "cir", "circle", "prospect", "domain", "kentfield", "winston",
+    "prospect st", "valmont", "central ave", "augusta", "village", "park", "prospect", "cordova",
+]
+
+STOP_LINE_PREFIXES = (
+    "ring size", "width", "personalization", "gemstone type", "shipping service", "13.", "https://", "shipentegra"
+)
+
 
 def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-def normalize_whitespace_keep_lines(text: str) -> List[str]:
-    return [clean_text(x) for x in (text or "").splitlines() if clean_text(x)]
+def strip_footer_noise(text: str) -> str:
+    text = re.sub(r"https?://\S+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b\d{1,2}/\d{1,2}\b", "", text)
+    text = re.sub(r"\bShipentegra\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"printmultipleorders", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}\b", "", text)
+    return text
 
 
-def extract_order_no(text: str) -> str:
-    m = re.search(r"Sipariş Numarası\s*\n?\s*(\d+)", text, re.IGNORECASE)
+def normalize_lines(text: str) -> List[str]:
+    text = strip_footer_noise(text)
+    lines = [clean_text(x) for x in text.splitlines() if clean_text(x)]
+    return lines
+
+
+def is_address_like(line: str) -> bool:
+    low = line.lower()
+    if any(h in low for h in ADDRESS_HINTS):
+        return True
+    if re.search(r"\b[A-Z]{2}\d{4,}", line):
+        return True
+    if re.search(r"\d{1,6}", line) and len(line.split()) >= 2:
+        return True
+    if re.search(r"\b(?:GB|US|IE)\b", line):
+        return True
+    return False
+
+
+def extract_order_no(page_text: str) -> str:
+    m = re.search(r"Sipariş Numarası\s*(\d+)", page_text, re.IGNORECASE)
     return m.group(1).strip() if m else ""
 
 
 def find_customer_name(page_text: str) -> str:
-    lines = normalize_whitespace_keep_lines(page_text)
-    if not lines:
-        return ""
-
-    skip_prefixes = {
+    lines = normalize_lines(page_text)
+    skip = {
         "Sipariş Bilgileri",
         "Alıcı Adres Sipariş Tarihi Kendi Notum",
         "Sipariş Numarası",
         "Sipariş Ürünleri",
     }
-
     for i, line in enumerate(lines):
         if line == "Alıcı Adres Sipariş Tarihi Kendi Notum":
-            for candidate in lines[i + 1:i + 4]:
-                if candidate in skip_prefixes:
+            for candidate in lines[i + 1:i + 6]:
+                if candidate in skip:
                     continue
                 if re.search(r"\b\d{4}-\d{2}-\d{2}\b", candidate):
                     continue
                 if candidate.isdigit():
                     continue
-                if "Shipentegra" in candidate or "http" in candidate:
+                if is_address_like(candidate):
                     continue
                 if len(candidate.split()) >= 2:
                     return candidate
+    # fallback: first reasonable person-like line before address/date
+    for line in lines:
+        if line in skip:
+            continue
+        if re.search(r"\b\d{4}-\d{2}-\d{2}\b", line):
+            continue
+        if is_address_like(line):
+            continue
+        if len(line.split()) >= 2 and not re.search(r"Sipariş|Adet:|Ring size|Width", line, re.IGNORECASE):
+            return line
     return ""
 
 
 def split_products(page_text: str) -> List[str]:
+    page_text = strip_footer_noise(page_text)
     parts = re.split(r"(?=Adet:\s*\d+)", page_text)
-    return [clean_text(p) for p in parts if "Adet:" in p]
+    return [p.strip() for p in parts if re.search(r"Adet:\s*\d+", p)]
 
 
 def normalize_width(product_block: str) -> str:
     m = re.search(r"Width\s*:\s*([0-9.,]+\s*mm)", product_block, re.IGNORECASE)
     if m:
         return m.group(1).replace("mm", "MM").replace("Mm", "MM").strip()
-
-    m2 = re.search(r"\b([1-9]|10)\s*mm\b", product_block, re.IGNORECASE)
+    title = extract_product_title(product_block)
+    m2 = re.search(r"\b([1-9]|10)\s*mm\b", title, re.IGNORECASE)
     if m2:
         return m2.group(0).replace("mm", "MM").strip()
     return ""
@@ -104,18 +144,27 @@ def normalize_width(product_block: str) -> str:
 
 def normalize_size(product_block: str) -> str:
     m = re.search(r"Ring size\s*:\s*([^\n\r]+)", product_block, re.IGNORECASE)
-    return clean_text(m.group(1)) if m else ""
+    return clean_text(strip_footer_noise(m.group(1))) if m else ""
 
 
 def normalize_laser(product_block: str) -> str:
-    m = re.search(
-        r"Personalization\s*:\s*([^\n\r]+(?:\n(?!Adet:|Ring size|Width|Gemstone type|Shipping Service|13\.)[^\n\r]+)*)",
-        product_block,
-        re.IGNORECASE,
-    )
-    if not m:
-        return ""
-    laser = clean_text(m.group(1))
+    lines = normalize_lines(product_block)
+    laser_parts = []
+    capture = False
+    for line in lines:
+        low = line.lower()
+        if low.startswith("personalization"):
+            capture = True
+            piece = line.split(":", 1)[1].strip() if ":" in line else ""
+            if piece:
+                laser_parts.append(piece)
+            continue
+        if capture:
+            if low.startswith(STOP_LINE_PREFIXES) or low.startswith("adet:"):
+                break
+            if line:
+                laser_parts.append(line)
+    laser = clean_text(" ".join(laser_parts))
     laser = laser.replace('"', "").replace("Font 4-all caps initials", "").strip()
     return clean_text(laser)
 
@@ -137,16 +186,14 @@ def detect_shape(text: str) -> str:
         return "BOMBE"
     if "flat" in t:
         return "DÜZ"
-    if "bevel" in t or "beveled" in t or "bevelled" in t:
+    if "bevel" in t or "bevelled" in t or "beveled" in t:
         return "ÇATI"
     return ""
 
 
 def detect_finish(text: str) -> str:
     t = (text or "").lower()
-    if "matte" in t:
-        return "MAT"
-    return ""
+    return "MAT" if "matte" in t else ""
 
 
 def is_resize_listing(product_text: str) -> bool:
@@ -182,27 +229,23 @@ def build_model(product_title: str) -> str:
 
 
 def extract_product_title(block: str) -> str:
-    lines = normalize_whitespace_keep_lines(block)
+    lines = normalize_lines(block)
     started = False
     title_lines = []
-    stop_starts = (
-        "Ring size",
-        "Width",
-        "Personalization",
-        "Gemstone type",
-        "Shipping Service",
-    )
-
     for line in lines:
-        if line.startswith("Adet:"):
+        low = line.lower()
+        if low.startswith("adet:"):
             started = True
             continue
         if started:
-            if any(line.startswith(x) for x in stop_starts):
+            if low.startswith(STOP_LINE_PREFIXES):
                 break
+            # Skip pure footer/date remnants
+            if low.startswith("sipariş") or low.startswith("alıcı adres"):
+                continue
             title_lines.append(line)
-
-    return clean_text(" ".join(title_lines))
+    title = clean_text(" ".join(title_lines))
+    return title
 
 
 def parse_page(page_text: str) -> List[Dict[str, str]]:
@@ -214,16 +257,25 @@ def parse_page(page_text: str) -> List[Dict[str, str]]:
     for block in product_blocks:
         title = extract_product_title(block)
         resize = is_resize_listing(block)
-        label = {
+        width = "" if resize else normalize_width(block)
+        size = normalize_size(block)
+        laser = normalize_laser(block)
+        model = build_model(title)
+        note = "YENİLEME" if resize else ""
+
+        # Avoid gemstone size being mistaken as width for non-band items
+        if "oval tektaş" in model.lower() or "oval solitaire" in title.lower():
+            width = ""
+
+        labels.append({
             "siparis_no": order_no,
             "musteri": customer,
-            "genislik": "" if resize else normalize_width(block),
-            "model": build_model(title),
-            "olcu": normalize_size(block),
-            "lazer": normalize_laser(block),
-            "not": "YENİLEME" if resize else "",
-        }
-        labels.append(label)
+            "genislik": width,
+            "model": model,
+            "olcu": size,
+            "lazer": laser,
+            "not": note,
+        })
 
     return labels
 
@@ -240,7 +292,8 @@ def parse_uploaded_pdf(pdf_bytes: bytes) -> List[Dict[str, str]]:
 
 
 def p(text: str, bold: bool = False) -> Paragraph:
-    return Paragraph(text or "", BOLD_STYLE if bold else BASE_STYLE)
+    safe = (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return Paragraph(safe, BOLD_STYLE if bold else BASE_STYLE)
 
 
 def make_label_table(item: Dict[str, str]) -> Table:
@@ -320,6 +373,8 @@ def build_labels_pdf(labels: List[Dict[str, str]]) -> bytes:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
         story.append(outer)
+        if page_start + slots_per_page < len(labels):
+            story.append(PageBreak())
 
     if not story:
         story = [Paragraph("Etiket üretilemedi.", BASE_STYLE)]
@@ -357,7 +412,7 @@ with st.expander("Kurallar", expanded=False):
 - rose/pink → rose
 - Aynı siparişte 2 ürün varsa 2 etiket
 - Lazer varsa kalın yazılır
-- Resize listing için Not alanı: YENİLEME
+- Resize listing için Model ve Not: YENİLEME
         """
     )
 
@@ -365,7 +420,6 @@ if uploaded is not None:
     pdf_bytes = uploaded.read()
     try:
         labels = parse_uploaded_pdf(pdf_bytes)
-
         st.subheader("Önizleme")
         st.write(f"Toplam etiket: {len(labels)}")
         if labels:
