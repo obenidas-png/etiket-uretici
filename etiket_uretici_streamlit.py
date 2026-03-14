@@ -10,7 +10,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle, Spacer, PageBreak
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="Etiket Üretici", page_icon="🏷️", layout="centered")
 
@@ -46,7 +46,8 @@ BOLD_STYLE = ParagraphStyle(
 ADDRESS_HINTS = [
     "street", "st ", " st", "ave", "avenue", "road", "rd", "house", "apt", "apartment",
     "flat", "dr", "drive", "cir", "circle", "prospect", "domain", "kentfield", "winston",
-    "prospect st", "valmont", "central ave", "augusta", "village", "park", "prospect", "cordova",
+    "valmont", "central", "augusta", "village", "park", "cordova", "barking", "ashburn",
+    "buffalo", "new haven", "austin", "cookeville", "belfast",
 ]
 
 STOP_LINE_PREFIXES = (
@@ -69,19 +70,18 @@ def strip_footer_noise(text: str) -> str:
 
 def normalize_lines(text: str) -> List[str]:
     text = strip_footer_noise(text)
-    lines = [clean_text(x) for x in text.splitlines() if clean_text(x)]
-    return lines
+    return [clean_text(x) for x in text.splitlines() if clean_text(x)]
 
 
 def is_address_like(line: str) -> bool:
     low = line.lower()
     if any(h in low for h in ADDRESS_HINTS):
         return True
+    if re.search(r"\b(?:GB|US|IE)\b", line):
+        return True
     if re.search(r"\b[A-Z]{2}\d{4,}", line):
         return True
     if re.search(r"\d{1,6}", line) and len(line.split()) >= 2:
-        return True
-    if re.search(r"\b(?:GB|US|IE)\b", line):
         return True
     return False
 
@@ -93,35 +93,46 @@ def extract_order_no(page_text: str) -> str:
 
 def find_customer_name(page_text: str) -> str:
     lines = normalize_lines(page_text)
-    skip = {
-        "Sipariş Bilgileri",
-        "Alıcı Adres Sipariş Tarihi Kendi Notum",
-        "Sipariş Numarası",
-        "Sipariş Ürünleri",
-    }
+    date_re = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
     for i, line in enumerate(lines):
         if line == "Alıcı Adres Sipariş Tarihi Kendi Notum":
-            for candidate in lines[i + 1:i + 6]:
-                if candidate in skip:
+            for candidate in lines[i + 1:i + 8]:
+                low = candidate.lower()
+                if candidate in {"Sipariş Numarası", "Sipariş Ürünleri"}:
                     continue
-                if re.search(r"\b\d{4}-\d{2}-\d{2}\b", candidate):
-                    continue
-                if candidate.isdigit():
-                    continue
+                if date_re.search(candidate):
+                    break
                 if is_address_like(candidate):
+                    continue
+                if re.search(r"\b(?:GEÇİLDİ|STOK|Ş)\b", candidate):
+                    continue
+                if any(x in low for x in ["wedding band", "ring", "gold", "silver", "vermeil", "promise", "service", "solitaire"]):
                     continue
                 if len(candidate.split()) >= 2:
                     return candidate
-    # fallback: first reasonable person-like line before address/date
+
+    top_section = []
     for line in lines:
-        if line in skip:
+        if line == "Sipariş Numarası":
+            break
+        top_section.append(line)
+
+    for line in top_section:
+        low = line.lower()
+        if line in {"Sipariş Bilgileri", "Alıcı Adres Sipariş Tarihi Kendi Notum", "Sipariş Ürünleri"}:
             continue
-        if re.search(r"\b\d{4}-\d{2}-\d{2}\b", line):
+        if date_re.search(line):
             continue
         if is_address_like(line):
             continue
-        if len(line.split()) >= 2 and not re.search(r"Sipariş|Adet:|Ring size|Width", line, re.IGNORECASE):
+        if re.search(r"\b(?:GEÇİLDİ|STOK|Ş)\b", line):
+            continue
+        if any(x in low for x in ["wedding band", "ring", "gold", "silver", "vermeil", "promise", "service", "solitaire"]):
+            continue
+        if len(line.split()) >= 2:
             return line
+
     return ""
 
 
@@ -129,6 +140,24 @@ def split_products(page_text: str) -> List[str]:
     page_text = strip_footer_noise(page_text)
     parts = re.split(r"(?=Adet:\s*\d+)", page_text)
     return [p.strip() for p in parts if re.search(r"Adet:\s*\d+", p)]
+
+
+def extract_product_title(block: str) -> str:
+    lines = normalize_lines(block)
+    started = False
+    title_lines = []
+    for line in lines:
+        low = line.lower()
+        if low.startswith("adet:"):
+            started = True
+            continue
+        if started:
+            if low.startswith(STOP_LINE_PREFIXES):
+                break
+            if low.startswith("sipariş") or low.startswith("alıcı adres"):
+                continue
+            title_lines.append(line)
+    return clean_text(" ".join(title_lines))
 
 
 def normalize_width(product_block: str) -> str:
@@ -144,7 +173,11 @@ def normalize_width(product_block: str) -> str:
 
 def normalize_size(product_block: str) -> str:
     m = re.search(r"Ring size\s*:\s*([^\n\r]+)", product_block, re.IGNORECASE)
-    return clean_text(strip_footer_noise(m.group(1))) if m else ""
+    if not m:
+        return ""
+    raw = clean_text(strip_footer_noise(m.group(1)))
+    m2 = re.search(r"(\d+(?:\s+\d+/\d+)?\s*US)", raw, re.IGNORECASE)
+    return m2.group(1).upper().replace("  ", " ").strip() if m2 else raw
 
 
 def normalize_laser(product_block: str) -> str:
@@ -162,10 +195,12 @@ def normalize_laser(product_block: str) -> str:
         if capture:
             if low.startswith(STOP_LINE_PREFIXES) or low.startswith("adet:"):
                 break
-            if line:
-                laser_parts.append(line)
+            laser_parts.append(line)
     laser = clean_text(" ".join(laser_parts))
-    laser = laser.replace('"', "").replace("Font 4-all caps initials", "").strip()
+    laser = laser.replace('&quot;', '"').replace('quot;', '"').replace('"', '')
+    laser = laser.replace("Font 4-all caps initials", "")
+    if laser.startswith(":"):
+        laser = laser[1:].strip()
     return clean_text(laser)
 
 
@@ -207,10 +242,10 @@ def is_resize_listing(product_text: str) -> bool:
 
 
 def build_model(product_title: str) -> str:
-    lower = (product_title or "").lower()
-    if is_resize_listing(lower):
+    low = (product_title or "").lower()
+    if is_resize_listing(low):
         return "YENİLEME"
-    if "oval solitaire ring" in lower:
+    if "oval solitaire ring" in low:
         return "OVAL TEKTAŞ"
 
     parts = []
@@ -228,24 +263,13 @@ def build_model(product_title: str) -> str:
     return " ".join(parts).strip()
 
 
-def extract_product_title(block: str) -> str:
-    lines = normalize_lines(block)
-    started = False
-    title_lines = []
-    for line in lines:
-        low = line.lower()
-        if low.startswith("adet:"):
-            started = True
-            continue
-        if started:
-            if low.startswith(STOP_LINE_PREFIXES):
-                break
-            # Skip pure footer/date remnants
-            if low.startswith("sipariş") or low.startswith("alıcı adres"):
-                continue
-            title_lines.append(line)
-    title = clean_text(" ".join(title_lines))
-    return title
+def build_product_hint(product_title: str) -> str:
+    low = (product_title or "").lower()
+    if is_resize_listing(low):
+        return "Yüzük Yenileme"
+    if "oval solitaire ring" in low:
+        return "Oval Tektaş"
+    return ""
 
 
 def parse_page(page_text: str) -> List[Dict[str, str]]:
@@ -262,9 +286,9 @@ def parse_page(page_text: str) -> List[Dict[str, str]]:
         laser = normalize_laser(block)
         model = build_model(title)
         note = "YENİLEME" if resize else ""
+        urun_adi = build_product_hint(title)
 
-        # Avoid gemstone size being mistaken as width for non-band items
-        if "oval tektaş" in model.lower() or "oval solitaire" in title.lower():
+        if model == "OVAL TEKTAŞ":
             width = ""
 
         labels.append({
@@ -275,6 +299,7 @@ def parse_page(page_text: str) -> List[Dict[str, str]]:
             "olcu": size,
             "lazer": laser,
             "not": note,
+            "urun_adi": urun_adi,
         })
 
     return labels
@@ -307,6 +332,9 @@ def make_label_table(item: Dict[str, str]) -> Table:
         [p("Lazer"), p(item.get("lazer", ""), bold=lazer_bold)],
         [p("Not"), p(item.get("not", ""))],
     ]
+
+    if not (item.get("musteri") or "").strip() and (item.get("urun_adi") or "").strip() and not (item.get("not") or "").strip():
+        data[6][1] = p(item.get("urun_adi", ""))
 
     row_heights = [0.40 * cm, 0.42 * cm, 0.35 * cm, 0.42 * cm, 0.35 * cm, 0.53 * cm, 0.53 * cm]
     t = Table(data, colWidths=[2.0 * cm, 4.0 * cm], rowHeights=row_heights)
