@@ -358,6 +358,7 @@ def parse_page(page_text: str) -> List[Dict[str, str]]:
             width = ""
 
         labels.append({
+            "magaza_adi": "CPNQ",
             "siparis_no": order_no,
             "musteri": customer,
             "genislik": width,
@@ -429,6 +430,7 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
     for raw_row in reader:
         row = {clean_text(k): clean_text(v) for k, v in raw_row.items() if k is not None}
 
+        magaza_adi = row.get("MagazaAdı", "") or row.get("MağazaAdı", "") or "CPNQ"
         musteri = row.get("Alıcı", "")
         siparis_no = row.get("SiparişNumarası", "")
         urun_adi = row.get("ÜrünAdı", "")
@@ -499,6 +501,7 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
             count = max(len(ring_sizes), len(widths), 2)
             for i in range(count):
                 labels.append({
+                    "magaza_adi": magaza_adi,
                     "siparis_no": siparis_no,
                     "musteri": musteri,
                     "genislik": widths[i] if i < len(widths) else "",
@@ -511,6 +514,7 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
                 })
         else:
             labels.append({
+                "magaza_adi": magaza_adi,
                 "siparis_no": siparis_no,
                 "musteri": musteri,
                 "genislik": widths[0] if widths else "",
@@ -542,7 +546,7 @@ def p(text: str, laser: bool = False) -> Paragraph:
 
 def make_label_table(item: Dict[str, str]) -> Table:
     data = [
-        [p("Mağaza Adı"), p("CPNQ")],
+        [p("Mağaza Adı"), p(item.get("magaza_adi", "CPNQ"))],
         [p("Sipariş No"), p(item.get("siparis_no", ""))],
         [p("Müşteri Adı"), p(item.get("musteri", ""))],
         [p("Genişlik"), p(item.get("genislik", ""))],
@@ -714,6 +718,7 @@ def build_checklist_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
     rows = []
     for item in labels:
         rows.append({
+            "Mağaza Adı": item.get("magaza_adi", "CPNQ"),
             "Sipariş No": item.get("siparis_no", ""),
             "Müşteri Adı": truncate_text(item.get("musteri", ""), 24),
             "Genişlik": item.get("genislik", ""),
@@ -887,7 +892,7 @@ if uploaded is not None:
             st.dataframe(df_personal, use_container_width=True, hide_index=True)
 
             st.subheader("Kontrol Listesi")
-            st.markdown("**Mağaza Adı: CPNQ**")
+            st.markdown(f"**Mağaza Adı: {labels[0].get('magaza_adi', 'CPNQ')}**")
             st.dataframe(df_check, use_container_width=True, hide_index=True)
 
             st.subheader("Üretim Özeti")
@@ -896,7 +901,10 @@ if uploaded is not None:
             output_pdf = build_labels_pdf(labels)
             txt_production = dataframe_to_txt(df_production, "Üretim Listesi")
             txt_personal = personalization_df_to_txt(df_personal, "Kişiselleştirme Listesi")
-            txt_check = dataframe_to_txt(df_check, "Mağaza Adı: CPNQ\nKontrol Listesi")
+            txt_check = dataframe_to_txt(
+                df_check,
+                f"Mağaza Adı: {labels[0].get('magaza_adi', 'CPNQ')}\nKontrol Listesi"
+            )
             txt_summary = dataframe_to_txt(df_summary, "Üretim Özeti")
 
             st.download_button(
