@@ -699,10 +699,10 @@ def build_personalization_dataframe(labels: List[Dict[str, str]]) -> pd.DataFram
         lazer = item.get("lazer", "")
         if str(lazer).strip():
             rows.append({
-                "Müşteri Adı": truncate_text(item.get("musteri", ""), 24),
+                "Müşteri Adı": truncate_text(item.get("musteri", ""), 28),
                 "Genişlik": item.get("genislik", ""),
                 "Model": production_model(item.get("model", "")),
-                "Kişiselleştirme": truncate_text(lazer, 42),
+                "Kişiselleştirme": clean_text(lazer),
             })
     df = pd.DataFrame(rows)
     if df.empty:
@@ -715,12 +715,12 @@ def build_checklist_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
     for item in labels:
         rows.append({
             "Sipariş No": item.get("siparis_no", ""),
-            "Müşteri Adı": truncate_text(item.get("musteri", ""), 22),
+            "Müşteri Adı": truncate_text(item.get("musteri", ""), 24),
             "Genişlik": item.get("genislik", ""),
             "Renk": item.get("renk", ""),
             "Model": production_model(item.get("model", "")) if item.get("model", "") != "YENİLEME" else "YENİLEME",
             "Ölçü": item.get("olcu", ""),
-            "Kişiselleştirme": truncate_text(item.get("lazer", ""), 28),
+            "Kişiselleştirme": truncate_text(item.get("lazer", ""), 30),
             "Check": "☐",
         })
     df = pd.DataFrame(rows)
@@ -795,6 +795,38 @@ def dataframe_to_txt(df: pd.DataFrame, title: str) -> bytes:
     return out.getvalue().encode("utf-8")
 
 
+def personalization_df_to_txt(df: pd.DataFrame, title: str) -> bytes:
+    out = io.StringIO()
+
+    out.write(f"{title}\n")
+    out.write("=" * len(title) + "\n\n")
+
+    if df.empty:
+        out.write("Kayıt yok.\n")
+        return out.getvalue().encode("utf-8")
+
+    name_w = 30
+    width_w = 10
+    model_w = 14
+
+    for _, row in df.iterrows():
+        musteri = truncate_text(str(row.get("Müşteri Adı", "")), name_w - 1)
+        genislik = str(row.get("Genişlik", ""))
+        model = truncate_text(str(row.get("Model", "")), model_w - 1)
+        kisisellestirme = clean_text(str(row.get("Kişiselleştirme", "")))
+
+        first_line = (
+            musteri.ljust(name_w) +
+            genislik.ljust(width_w) +
+            model.ljust(model_w)
+        )
+        out.write(first_line.rstrip() + "\n")
+        out.write(kisisellestirme + "\n")
+        out.write("---------\n\n")
+
+    return out.getvalue().encode("utf-8")
+
+
 st.title("Etiket Üretici")
 st.write("Sipariş PDF veya CSV dosyasını yükleyin. Sistem etiketleri ve listeleri otomatik üretir.")
 
@@ -863,7 +895,7 @@ if uploaded is not None:
 
             output_pdf = build_labels_pdf(labels)
             txt_production = dataframe_to_txt(df_production, "Üretim Listesi")
-            txt_personal = dataframe_to_txt(df_personal, "Kişiselleştirme Listesi")
+            txt_personal = personalization_df_to_txt(df_personal, "Kişiselleştirme Listesi")
             txt_check = dataframe_to_txt(df_check, "Mağaza Adı: CPNQ\nKontrol Listesi")
             txt_summary = dataframe_to_txt(df_summary, "Üretim Özeti")
 
