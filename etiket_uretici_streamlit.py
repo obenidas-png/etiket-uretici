@@ -33,7 +33,7 @@ BASE_STYLE = ParagraphStyle(
     "base",
     fontName="DejaVuSans",
     fontSize=8,
-    leading=8.5,
+    leading=8.3,
     spaceAfter=0,
     spaceBefore=0,
 )
@@ -42,6 +42,16 @@ BOLD_STYLE = ParagraphStyle(
     "bold",
     parent=BASE_STYLE,
     fontName="DejaVuSans-Bold",
+)
+
+LASER_STYLE = ParagraphStyle(
+    "laser",
+    parent=BASE_STYLE,
+    fontName="DejaVuSans",
+    fontSize=6,
+    leading=6.4,
+    spaceAfter=0,
+    spaceBefore=0,
 )
 
 ADDRESS_HINTS = [
@@ -215,7 +225,7 @@ def normalize_laser(product_block: str) -> str:
                 break
             laser_parts.append(line)
     laser = clean_text(" ".join(laser_parts))
-    laser = laser.replace('&quot;', '"').replace('quot;', '"').replace('"', '')
+    laser = laser.replace('&quot;', '"').replace('quot;', '"')
     laser = laser.replace("Font 4-all caps initials", "")
     if laser.startswith(":"):
         laser = laser[1:].strip()
@@ -405,9 +415,8 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
 
         personalization_values = parsed.get("personalization", [])
         lazer = personalization_values[0] if personalization_values else ""
-        lazer = lazer.replace('“', '').replace('”', '').replace('"', '').strip()
+        lazer = lazer.strip()
 
-        # set of 2 listinglerinde personalization içinden width çek
         if not widths and lazer:
             widths = extract_widths_from_personalization(lazer)
 
@@ -435,7 +444,6 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
                 if m:
                     ring_sizes = [m.group(1).upper()]
 
-        # Çoklu ürün mantığı
         pair_mode = (
             "set of 2" in urun_adi.lower()
             or "his and her" in urun_adi.lower()
@@ -471,27 +479,38 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
     return [x for x in labels if any(str(v).strip() for v in x.values())]
 
 
-def p(text: str, bold: bool = False) -> Paragraph:
-    safe = (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def escape_paragraph_text(text: str) -> str:
+    text = text or ""
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    return text
+
+
+def p(text: str, bold: bool = False, laser: bool = False) -> Paragraph:
+    safe = escape_paragraph_text(text)
+    if laser:
+        return Paragraph(safe, LASER_STYLE)
     return Paragraph(safe, BOLD_STYLE if bold else BASE_STYLE)
 
 
 def make_label_table(item: Dict[str, str]) -> Table:
-    lazer_bold = bool((item.get("lazer") or "").strip())
     data = [
+        [p("Mağaza Adı"), p("CPNQ")],
         [p("Sipariş No"), p(item.get("siparis_no", ""))],
         [p("Müşteri Adı"), p(item.get("musteri", ""))],
         [p("Genişlik"), p(item.get("genislik", ""))],
         [p("Model"), p(item.get("model", ""))],
         [p("Ölçü"), p(item.get("olcu", ""))],
-        [p("Lazer"), p(item.get("lazer", ""), bold=lazer_bold)],
+        [p("Lazer"), p(item.get("lazer", ""), laser=True)],
         [p("Not"), p(item.get("not", ""))],
     ]
 
     if not (item.get("musteri") or "").strip() and (item.get("urun_adi") or "").strip() and not (item.get("not") or "").strip():
-        data[6][1] = p(item.get("urun_adi", ""))
+        data[7][1] = p(item.get("urun_adi", ""))
 
-    row_heights = [0.40 * cm, 0.42 * cm, 0.35 * cm, 0.42 * cm, 0.35 * cm, 0.53 * cm, 0.53 * cm]
+    row_heights = [0.34 * cm, 0.34 * cm, 0.38 * cm, 0.30 * cm, 0.38 * cm, 0.30 * cm, 0.48 * cm, 0.48 * cm]
+
     t = Table(data, colWidths=[2.0 * cm, 4.0 * cm], rowHeights=row_heights)
     t.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.45, colors.black),
@@ -594,9 +613,10 @@ with st.expander("Kurallar", expanded=False):
 - white → beyaz
 - rose/pink → rose
 - Aynı siparişte 2 ürün varsa 2 etiket
-- Lazer varsa kalın yazılır
 - Resize listing için Model ve Not: YENİLEME
 - CSV yüklenirse müşteri adı ve diğer alanlar doğrudan kolonlardan okunur
+- Lazer alanı küçük fontla yazılır
+- Üst satırda mağaza adı gösterilir
         """
     )
 
