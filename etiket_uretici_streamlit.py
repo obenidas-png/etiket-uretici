@@ -3,6 +3,7 @@ import re
 import csv
 from typing import List, Dict
 
+import pandas as pd
 import pdfplumber
 import streamlit as st
 from reportlab.lib import colors
@@ -255,6 +256,17 @@ def detect_finish(text: str) -> str:
     return "MAT" if "matte" in t else ""
 
 
+def detect_color_only(text: str) -> str:
+    t = (text or "").lower()
+    if "rose" in t or "pink" in t:
+        return "ROSE"
+    if "white gold" in t or "white" in t:
+        return "BEYAZ"
+    if "yellow gold" in t or "yellow" in t:
+        return "SARI"
+    return ""
+
+
 def is_resize_listing(product_text: str) -> bool:
     t = (product_text or "").lower()
     return (
@@ -312,6 +324,7 @@ def parse_page(page_text: str) -> List[Dict[str, str]]:
         model = build_model(title)
         note = "YENİLEME" if resize else ""
         urun_adi = build_product_hint(title)
+        renk = "" if resize else detect_color_only(title)
 
         if model == "OVAL TEKTAŞ":
             width = ""
@@ -325,6 +338,7 @@ def parse_page(page_text: str) -> List[Dict[str, str]]:
             "lazer": laser,
             "not": note,
             "urun_adi": urun_adi,
+            "renk": renk,
         })
 
     return labels
@@ -424,6 +438,7 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
         model = build_model(urun_adi)
         note = ""
         resize = is_resize_listing(urun_adi) or is_resize_listing(ozellikler)
+        renk = "" if resize else detect_color_only(urun_adi)
 
         if resize:
             model = "YENİLEME"
@@ -464,6 +479,7 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
                     "lazer": lazer,
                     "not": note,
                     "urun_adi": build_product_hint(urun_adi),
+                    "renk": renk,
                 })
         else:
             labels.append({
@@ -475,6 +491,7 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
                 "lazer": lazer,
                 "not": note,
                 "urun_adi": build_product_hint(urun_adi),
+                "renk": renk,
             })
 
     return [x for x in labels if any(str(v).strip() for v in x.values())]
@@ -595,8 +612,108 @@ def build_labels_pdf(labels: List[Dict[str, str]]) -> bytes:
     return buffer.getvalue()
 
 
+def production_model(model: str) -> str:
+    m = (model or "").upper().strip()
+    if "BOMBE" in m:
+        return "BOMBE"
+    if "DÜZ" in m:
+        return "DÜZ"
+    if "ÇATI" in m and "MAT" in m:
+        return "ÇATI MAT"
+    if "ÇATI" in m:
+        return "ÇATI PARLAK"
+    return ""
+
+
+def mm_sort_key(value: str):
+    text = (value or "").upper().replace("MM", "").strip()
+    try:
+        return float(text.replace(",", "."))
+    except Exception:
+        return 9999.0
+
+
+def size_sort_key(value: str):
+    text = (value or "").upper().replace("US", "").strip()
+    try:
+        if " " in text and "/" in text:
+            base, frac = text.split(" ", 1)
+            num, den = frac.split("/", 1)
+            return float(base) + (float(num) / float(den))
+        return float(text)
+    except Exception:
+        return 9999.0
+
+
+def build_production_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
+    rows = []
+    for item in labels:
+        rows.append({
+            "Genişlik": item.get("genislik", ""),
+            "Model": production_model(item.get("model", "")),
+            "Ölçü": item.get("olcu", ""),
+        })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df = df[(df["Genişlik"].astype(str).str.strip() != "") | (df["Model"].astype(str).str.strip() != "") | (df["Ölçü"].astype(str).str.strip() != "")].copy()
+    df["_sort_mm"] = df["Genişlik"].apply(mm_sort_key)
+    model_order = {"BOMBE": 1, "DÜZ": 2, "ÇATI MAT": 3, "ÇATI PARLAK": 4, "": 99}
+    df["_sort_model"] = df["Model"].map(model_order).fillna(99)
+    df["_sort_size"] = df["Ölçü"].apply(size_sort_key)
+    df = df.sort_values(["_sort_mm", "_sort_model", "_sort_size"], kind="stable").drop(columns=["_sort_mm", "_sort_model", "_sort_size"])
+    return df.reset_index(drop=True)
+
+
+def build_personalization_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
+    rows = []
+    for item in labels:
+        lazer = item.get("lazer", "")
+        if str(lazer).strip():
+            rows.append({
+                "Müşteri Adı": item.get("musteri", ""),
+                "Yüzük Genişliği": item.get("genislik", ""),
+                "Kişiselleştirme Metni": lazer,
+            })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.reset_index(drop=True)
+
+
+def build_checklist_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
+    rows = []
+    for item in labels:
+        rows.append({
+            "Sipariş No": item.get("siparis_no", ""),
+            "Müşteri Adı": item.get("musteri", ""),
+            "Genişlik": item.get("genislik", ""),
+            "Renk": item.get("renk", ""),
+            "Model": production_model(item.get("model", "")) if item.get("model", "") != "YENİLEME" else "YENİLEME",
+            "Ölçü": item.get("olcu", ""),
+            "Kişiselleştirme": item.get("lazer", ""),
+            "Check": "☐",
+        })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.reset_index(drop=True)
+
+
+def dataframe_to_txt(df: pd.DataFrame, title: str) -> bytes:
+    out = io.StringIO()
+    out.write(f"{title}\n")
+    out.write("=" * len(title) + "\n\n")
+    if df.empty:
+        out.write("Kayıt yok.\n")
+    else:
+        out.write(df.to_string(index=False))
+        out.write("\n")
+    return out.getvalue().encode("utf-8")
+
+
 st.title("Etiket Üretici")
-st.write("Sipariş PDF veya CSV dosyasını yükleyin. Sistem etiketleri otomatik üretip PDF olarak indirmenizi sağlar.")
+st.write("Sipariş PDF veya CSV dosyasını yükleyin. Sistem etiketleri ve listeleri otomatik üretir.")
 
 uploaded = st.file_uploader("Sipariş dosyası", type=["pdf", "csv"])
 
@@ -619,6 +736,7 @@ with st.expander("Kurallar", expanded=False):
 - Lazer alanı küçük fontla ve satır kırılarak yazılır
 - Üst satırda mağaza adı gösterilir
 - Kalın yazı kullanılmaz
+- Etiketler PDF, diğer 3 çıktı metin dosyası olarak indirilir
         """
     )
 
@@ -640,12 +758,52 @@ if uploaded is not None:
 
         if labels:
             st.dataframe(labels, use_container_width=True)
+
+            df_production = build_production_dataframe(labels)
+            df_personal = build_personalization_dataframe(labels)
+            df_check = build_checklist_dataframe(labels)
+
+            st.subheader("Üretim Listesi")
+            st.dataframe(df_production, use_container_width=True, hide_index=True)
+
+            st.subheader("Kişiselleştirme Listesi")
+            st.dataframe(df_personal, use_container_width=True, hide_index=True)
+
+            st.subheader("Kontrol Listesi")
+            st.markdown("**Mağaza Adı: CPNQ**")
+            st.dataframe(df_check, use_container_width=True, hide_index=True)
+
             output_pdf = build_labels_pdf(labels)
+            txt_production = dataframe_to_txt(df_production, "Üretim Listesi")
+            txt_personal = dataframe_to_txt(df_personal, "Kişiselleştirme Listesi")
+            txt_check = dataframe_to_txt(df_check, "Mağaza Adı: CPNQ\nKontrol Listesi")
+
             st.download_button(
                 label="Etiket PDF indir",
                 data=output_pdf,
                 file_name="etiketler.pdf",
                 mime="application/pdf",
+                use_container_width=True,
+            )
+            st.download_button(
+                label="Üretim listesi TXT indir",
+                data=txt_production,
+                file_name="uretim_listesi.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+            st.download_button(
+                label="Kişiselleştirme listesi TXT indir",
+                data=txt_personal,
+                file_name="kisisellestirme_listesi.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+            st.download_button(
+                label="Kontrol listesi TXT indir",
+                data=txt_check,
+                file_name="kontrol_listesi.txt",
+                mime="text/plain",
                 use_container_width=True,
             )
         else:
