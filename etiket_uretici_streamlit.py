@@ -672,8 +672,9 @@ def build_personalization_dataframe(labels: List[Dict[str, str]]) -> pd.DataFram
         if str(lazer).strip():
             rows.append({
                 "Müşteri Adı": item.get("musteri", ""),
-                "Yüzük Genişliği": item.get("genislik", ""),
-                "Kişiselleştirme Metni": lazer,
+                "Genişlik": item.get("genislik", ""),
+                "Model": production_model(item.get("model", "")),
+                "Kişiselleştirme": lazer,
             })
     df = pd.DataFrame(rows)
     if df.empty:
@@ -702,14 +703,49 @@ def build_checklist_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
 
 def dataframe_to_txt(df: pd.DataFrame, title: str) -> bytes:
     out = io.StringIO()
-    out.write(f"{title}\n")
-    out.write("=" * len(title) + "\n\n")
+
+    out.write(f"{title}
+")
+    out.write("=" * len(title) + "
+
+")
+
     if df.empty:
-        out.write("Kayıt yok.\n")
-    else:
-        out.write(df.to_string(index=False))
-        out.write("\n")
-    return out.getvalue().encode("utf-8")
+        out.write("Kayıt yok.
+")
+        return out.getvalue().encode("utf-8")
+
+    # baskı dostu sabit sütun genişliği
+    col_widths = {}
+    for col in df.columns:
+        max_len = max(df[col].astype(str).map(len).max(), len(col))
+        col_widths[col] = max_len + 2
+
+    # başlık satırı
+    header = ""
+    for col in df.columns:
+        header += col.ljust(col_widths[col])
+    out.write(header + "
+")
+
+    # ayırıcı çizgi
+    sep = ""
+    for col in df.columns:
+        sep += ("-" * (col_widths[col]-1)) + " "
+    out.write(sep + "
+")
+
+    # satırlar
+    for _, row in df.iterrows():
+        line = ""
+        for col in df.columns:
+            line += str(row[col]).ljust(col_widths[col])
+        out.write(line + "
+")
+
+    out.write("
+")
+    return out.getvalue().encode("utf-8")("utf-8")
 
 
 st.title("Etiket Üretici")
