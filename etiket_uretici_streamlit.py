@@ -4,7 +4,6 @@ import csv
 from typing import List, Dict
 
 import pandas as pd
-
 import pdfplumber
 import streamlit as st
 from reportlab.lib import colors
@@ -16,10 +15,6 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="Etiket Üretici", page_icon="🏷️", layout="centered")
-
-# --- MAĞAZA SEÇİMİ ---
-st.sidebar.title("Ayarlar")
-secilen_magaza = st.sidebar.selectbox("Mağaza Seçin:", ["CPNQ", "FRIA", "CRSS"])
 
 LABEL_W = 6 * cm
 LABEL_H = 3 * cm
@@ -545,10 +540,9 @@ def p(text: str, laser: bool = False) -> Paragraph:
     return Paragraph(safe, BASE_STYLE)
 
 
-def make_label_table(item: Dict[str, str], shop_name: str) -> Table:
-    # Sabit "CPNQ" yerine parametre olarak gelen shop_name değişkenini kullanıyoruz
+def make_label_table(item: Dict[str, str]) -> Table:
     data = [
-        [p("Mağaza Adı"), p(shop_name)],
+        [p("Mağaza Adı"), p("CPNQ")],
         [p("Sipariş No"), p(item.get("siparis_no", ""))],
         [p("Müşteri Adı"), p(item.get("musteri", ""))],
         [p("Genişlik"), p(item.get("genislik", ""))],
@@ -575,7 +569,7 @@ def make_label_table(item: Dict[str, str], shop_name: str) -> Table:
     return t
 
 
-def build_labels_pdf(labels: List[Dict[str, str]], shop_name: str) -> bytes:
+def build_labels_pdf(labels: List[Dict[str, str]]) -> bytes:
     page_w, page_h = A4
     rows_per_page = int((page_h + ROW_GAP) // (LABEL_H + ROW_GAP))
     slots_per_page = rows_per_page * COLS
@@ -597,7 +591,7 @@ def build_labels_pdf(labels: List[Dict[str, str]], shop_name: str) -> bytes:
             row = []
             for c in range(COLS):
                 if idx < len(page_labels):
-                    row.append(make_label_table(page_labels[idx], shop_name))
+                    row.append(make_label_table(page_labels[idx]))
                     idx += 1
                 else:
                     row.append("")
@@ -834,15 +828,14 @@ def personalization_df_to_txt(df: pd.DataFrame, title: str) -> bytes:
 
 
 st.title("Etiket Üretici")
-st.write(f"Şu an **{secilen_magaza}** için işlem yapıyorsunuz.")
+st.write("Sipariş PDF veya CSV dosyasını yükleyin. Sistem etiketleri ve listeleri otomatik üretir.")
 
 uploaded = st.file_uploader("Sipariş dosyası", type=["pdf", "csv"])
 
 with st.expander("Kurallar", expanded=False):
     st.markdown(
-        f"""
+        """
 - 3 sütunlu A4 yerleşim
-- Mağaza: {secilen_magaza}
 - Etiket boyutu: 6 × 3 cm
 - Etiketler arasında boşluk
 - dome → bombe
@@ -894,22 +887,22 @@ if uploaded is not None:
             st.dataframe(df_personal, use_container_width=True, hide_index=True)
 
             st.subheader("Kontrol Listesi")
-            st.markdown(f"**Mağaza Adı: {secilen_magaza}**")
+            st.markdown("**Mağaza Adı: CPNQ**")
             st.dataframe(df_check, use_container_width=True, hide_index=True)
 
             st.subheader("Üretim Özeti")
             st.dataframe(df_summary, use_container_width=True, hide_index=True)
 
-            output_pdf = build_labels_pdf(labels, secilen_magaza) # Seçilen mağazayı gönderiyoruz
+            output_pdf = build_labels_pdf(labels)
             txt_production = dataframe_to_txt(df_production, "Üretim Listesi")
             txt_personal = personalization_df_to_txt(df_personal, "Kişiselleştirme Listesi")
-            txt_check = dataframe_to_txt(df_check, f"Mağaza Adı: {secilen_magaza}\nKontrol Listesi")
+            txt_check = dataframe_to_txt(df_check, "Mağaza Adı: CPNQ\nKontrol Listesi")
             txt_summary = dataframe_to_txt(df_summary, "Üretim Özeti")
 
             st.download_button(
                 label="Etiket PDF indir",
                 data=output_pdf,
-                file_name=f"etiketler_{secilen_magaza}.pdf",
+                file_name="etiketler.pdf",
                 mime="application/pdf",
                 use_container_width=True,
             )
@@ -930,7 +923,7 @@ if uploaded is not None:
             st.download_button(
                 label="Kontrol listesi TXT indir",
                 data=txt_check,
-                file_name=f"kontrol_listesi_{secilen_magaza}.txt",
+                file_name="kontrol_listesi.txt",
                 mime="text/plain",
                 use_container_width=True,
             )
@@ -944,3 +937,6 @@ if uploaded is not None:
         else:
             st.warning("Dosya içinden etiket oluşturulamadı.")
     except Exception as e:
+        st.error(f"Bir hata oluştu: {e}")
+
+st.caption("Streamlit Cloud üzerinde çalıştırmaya uygundur.")
