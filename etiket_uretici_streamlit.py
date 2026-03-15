@@ -14,8 +14,11 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle, PageBreak
 
-st.set_page_config(page_title="Etiket Üretici", page_icon="🏷️", layout="centered")
+st.set_page_config(page_title="Etiket Hazırlama", page_icon="🏷️", layout="centered")
 
+# ---------------------------------------------------
+# SABİTLER
+# ---------------------------------------------------
 LABEL_W = 6 * cm
 LABEL_H = 3 * cm
 COLS = 3
@@ -61,7 +64,152 @@ STOP_LINE_PREFIXES = (
     "ring size", "width", "personalization", "gemstone type", "shipping service", "13.", "https://", "shipentegra"
 )
 
+# ---------------------------------------------------
+# CSS / TEMA
+# ---------------------------------------------------
+st.markdown("""
+<style>
+:root {
+    --etsy-orange: #F1641E;
+    --etsy-orange-dark: #D65214;
+    --etsy-orange-soft: #FFF3EC;
+    --border-soft: #F3D6C7;
+    --text-dark: #2B2B2B;
+}
 
+html, body, [class*="css"] {
+    font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    max-width: 900px;
+}
+
+.hero-box {
+    background: linear-gradient(135deg, #FFF6F1 0%, #FFFFFF 100%);
+    border: 1px solid var(--border-soft);
+    border-radius: 18px;
+    padding: 24px 22px;
+    margin-bottom: 18px;
+}
+
+.hero-title {
+    font-size: 30px;
+    font-weight: 800;
+    color: var(--text-dark);
+    margin-bottom: 6px;
+}
+
+.hero-sub {
+    font-size: 15px;
+    color: #555;
+    margin-bottom: 0;
+}
+
+.step-strip {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 14px 0 4px 0;
+}
+
+.step-pill {
+    background: white;
+    border: 1px solid var(--border-soft);
+    color: #444;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.info-card {
+    background: #fff;
+    border: 1px solid #eee;
+    border-left: 5px solid var(--etsy-orange);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+}
+
+.info-label {
+    font-size: 12px;
+    color: #777;
+    margin-bottom: 4px;
+}
+
+.info-value {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text-dark);
+    line-height: 1.2;
+}
+
+.section-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-dark);
+    margin-top: 10px;
+    margin-bottom: 8px;
+}
+
+.stFileUploader {
+    background: #fff;
+    border: 1px dashed var(--etsy-orange);
+    border-radius: 16px;
+    padding: 10px;
+}
+
+.stDownloadButton > button {
+    width: 100%;
+    border-radius: 12px !important;
+    border: 1px solid var(--etsy-orange) !important;
+    background: var(--etsy-orange) !important;
+    color: white !important;
+    font-weight: 700 !important;
+    min-height: 48px;
+}
+
+.stDownloadButton > button:hover {
+    background: var(--etsy-orange-dark) !important;
+    border-color: var(--etsy-orange-dark) !important;
+    color: white !important;
+}
+
+div[data-testid="stExpander"] {
+    border: 1px solid #eee;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+div[data-testid="stTabs"] button {
+    font-weight: 700;
+}
+
+.status-ok {
+    background: #F4FFF6;
+    border: 1px solid #CDEFD5;
+    color: #215B2B;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 10px 0 16px 0;
+    font-weight: 600;
+}
+
+.footer-note {
+    text-align: center;
+    color: #777;
+    font-size: 13px;
+    margin-top: 24px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------
+# FONKSİYONLAR
+# ---------------------------------------------------
 def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
@@ -831,120 +979,154 @@ def personalization_df_to_txt(df: pd.DataFrame, title: str) -> bytes:
 
     return out.getvalue().encode("utf-8")
 
+# ---------------------------------------------------
+# ARAYÜZ
+# ---------------------------------------------------
+st.markdown("""
+<div class="hero-box">
+    <div class="hero-title">Etiket Hazırlama</div>
+    <p class="hero-sub">CSV veya PDF dosyası yükleyin. Sistem etiketleri ve üretim dosyalarını otomatik hazırlasın.</p>
+    <div class="step-strip">
+        <div class="step-pill">1. Dosya yükle</div>
+        <div class="step-pill">2. Kontrol et</div>
+        <div class="step-pill">3. Çıktıları indir</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-st.title("Etiket Üretici")
-st.write("Sipariş PDF veya CSV dosyasını yükleyin. Sistem etiketleri ve listeleri otomatik üretir.")
-
-uploaded = st.file_uploader("Sipariş dosyası", type=["pdf", "csv"])
-
-with st.expander("Kurallar", expanded=False):
-    st.markdown(
-        """
-- 3 sütunlu A4 yerleşim
-- Etiket boyutu: 6 × 3 cm
-- Etiketler arasında boşluk
-- dome → bombe
-- flat → düz
-- beveled → çatı
-- matte → mat
-- yellow → sarı
-- white → beyaz
-- rose/pink → rose
-- Aynı siparişte 2 ürün varsa 2 etiket
-- Resize listing için Model ve Not: YENİLEME
-- CSV yüklenirse müşteri adı ve diğer alanlar doğrudan kolonlardan okunur
-- Lazer alanı küçük fontla ve satır kırılarak yazılır
-- Üst satırda mağaza adı gösterilir
-- Kalın yazı kullanılmaz
-- Ölçüler ondalık gösterilir: 3/4 → 0.75, 4 1/4 → 4.25
-- Etiketler PDF, diğer 4 çıktı metin dosyası olarak indirilir
-        """
-    )
+uploaded = st.file_uploader(
+    "Sipariş dosyası yükleyin",
+    type=["pdf", "csv"],
+    help="Desteklenen formatlar: PDF ve CSV"
+)
 
 if uploaded is not None:
     file_bytes = uploaded.read()
+
     try:
         file_name = (uploaded.name or "").lower()
 
-        if file_name.endswith(".csv"):
-            labels = parse_uploaded_csv(file_bytes)
-            file_type = "CSV"
-        else:
-            labels = parse_uploaded_pdf(file_bytes)
-            file_type = "PDF"
-
-        st.subheader("Önizleme")
-        st.write(f"Toplam etiket: {len(labels)}")
-        st.write(f"Dosya türü: {file_type}")
+        with st.spinner("Dosya işleniyor..."):
+            if file_name.endswith(".csv"):
+                labels = parse_uploaded_csv(file_bytes)
+                file_type = "CSV"
+            else:
+                labels = parse_uploaded_pdf(file_bytes)
+                file_type = "PDF"
 
         if labels:
-            st.dataframe(labels, use_container_width=True)
-
+            magaza_adi = labels[0].get("magaza_adi", "CPNQ")
             df_production = build_production_dataframe(labels)
             df_personal = build_personalization_dataframe(labels)
             df_check = build_checklist_dataframe(labels)
             df_summary = build_production_summary(labels)
-
-            st.subheader("Üretim Listesi")
-            st.dataframe(df_production, use_container_width=True, hide_index=True)
-
-            st.subheader("Kişiselleştirme Listesi")
-            st.dataframe(df_personal, use_container_width=True, hide_index=True)
-
-            st.subheader("Kontrol Listesi")
-            st.markdown(f"**Mağaza Adı: {labels[0].get('magaza_adi', 'CPNQ')}**")
-            st.dataframe(df_check, use_container_width=True, hide_index=True)
-
-            st.subheader("Üretim Özeti")
-            st.dataframe(df_summary, use_container_width=True, hide_index=True)
 
             output_pdf = build_labels_pdf(labels)
             txt_production = dataframe_to_txt(df_production, "Üretim Listesi")
             txt_personal = personalization_df_to_txt(df_personal, "Kişiselleştirme Listesi")
             txt_check = dataframe_to_txt(
                 df_check,
-                f"Mağaza Adı: {labels[0].get('magaza_adi', 'CPNQ')}\nKontrol Listesi"
+                f"Mağaza Adı: {magaza_adi}\nKontrol Listesi"
             )
             txt_summary = dataframe_to_txt(df_summary, "Üretim Özeti")
 
-            st.download_button(
-                label="Etiket PDF indir",
-                data=output_pdf,
-                file_name="etiketler.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-            st.download_button(
-                label="Üretim listesi TXT indir",
-                data=txt_production,
-                file_name="uretim_listesi.txt",
-                mime="text/plain",
-                use_container_width=True,
-            )
-            st.download_button(
-                label="Kişiselleştirme listesi TXT indir",
-                data=txt_personal,
-                file_name="kisisellestirme_listesi.txt",
-                mime="text/plain",
-                use_container_width=True,
-            )
-            st.download_button(
-                label="Kontrol listesi TXT indir",
-                data=txt_check,
-                file_name="kontrol_listesi.txt",
-                mime="text/plain",
-                use_container_width=True,
-            )
-            st.download_button(
-                label="Üretim özeti TXT indir",
-                data=txt_summary,
-                file_name="uretim_ozeti.txt",
-                mime="text/plain",
-                use_container_width=True,
-            )
+            st.markdown('<div class="status-ok">Dosya başarıyla işlendi. Çıktılar indirilmeye hazır.</div>', unsafe_allow_html=True)
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f"""
+                <div class="info-card">
+                    <div class="info-label">Mağaza</div>
+                    <div class="info-value">{magaza_adi}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with c2:
+                st.markdown(f"""
+                <div class="info-card">
+                    <div class="info-label">Dosya Türü</div>
+                    <div class="info-value">{file_type}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with c3:
+                st.markdown(f"""
+                <div class="info-card">
+                    <div class="info-label">Toplam Etiket</div>
+                    <div class="info-value">{len(labels)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown('<div class="section-title">Çıktıları İndir</div>', unsafe_allow_html=True)
+
+            d1, d2 = st.columns(2)
+            with d1:
+                st.download_button(
+                    "Etiket PDF indir",
+                    data=output_pdf,
+                    file_name="etiketler.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+                st.download_button(
+                    "Kişiselleştirme listesi indir",
+                    data=txt_personal,
+                    file_name="kisisellestirme_listesi.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+                st.download_button(
+                    "Üretim özeti indir",
+                    data=txt_summary,
+                    file_name="uretim_ozeti.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+
+            with d2:
+                st.download_button(
+                    "Üretim listesi indir",
+                    data=txt_production,
+                    file_name="uretim_listesi.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+                st.download_button(
+                    "Kontrol listesi indir",
+                    data=txt_check,
+                    file_name="kontrol_listesi.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+
+            with st.expander("Detaylı önizleme", expanded=False):
+                tab1, tab2, tab3, tab4, tab5 = st.tabs([
+                    "Etiketler",
+                    "Üretim",
+                    "Kişiselleştirme",
+                    "Kontrol",
+                    "Özet"
+                ])
+
+                with tab1:
+                    st.dataframe(pd.DataFrame(labels), use_container_width=True, hide_index=True)
+
+                with tab2:
+                    st.dataframe(df_production, use_container_width=True, hide_index=True)
+
+                with tab3:
+                    st.dataframe(df_personal, use_container_width=True, hide_index=True)
+
+                with tab4:
+                    st.dataframe(df_check, use_container_width=True, hide_index=True)
+
+                with tab5:
+                    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
         else:
-            st.warning("Dosya içinden etiket oluşturulamadı.")
+            st.warning("Dosyadan etiket oluşturulamadı. Dosya formatını veya içeriğini kontrol edin.")
+
     except Exception as e:
         st.error(f"Bir hata oluştu: {e}")
 
-st.caption("Streamlit Cloud üzerinde çalıştırmaya uygundur.")
+st.markdown('<div class="footer-note">Ekip kullanımı için sadeleştirilmiş etiket hazırlama ekranı</div>', unsafe_allow_html=True)
