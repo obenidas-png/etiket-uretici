@@ -656,7 +656,11 @@ def build_production_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     if df.empty:
         return df
-    df = df[(df["Genişlik"].astype(str).str.strip() != "") | (df["Model"].astype(str).str.strip() != "") | (df["Ölçü"].astype(str).str.strip() != "")].copy()
+    df = df[
+        (df["Genişlik"].astype(str).str.strip() != "")
+        | (df["Model"].astype(str).str.strip() != "")
+        | (df["Ölçü"].astype(str).str.strip() != "")
+    ].copy()
     df["_sort_mm"] = df["Genişlik"].apply(mm_sort_key)
     model_order = {"BOMBE": 1, "DÜZ": 2, "ÇATI MAT": 3, "ÇATI PARLAK": 4, "": 99}
     df["_sort_model"] = df["Model"].map(model_order).fillna(99)
@@ -701,51 +705,70 @@ def build_checklist_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+def build_production_summary(labels: List[Dict[str, str]]) -> pd.DataFrame:
+    rows = []
+    for item in labels:
+        rows.append({
+            "Genişlik": item.get("genislik", ""),
+            "Model": production_model(item.get("model", "")),
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df = df[
+        (df["Genişlik"].astype(str).str.strip() != "")
+        & (df["Model"].astype(str).str.strip() != "")
+    ]
+
+    summary = (
+        df.groupby(["Genişlik", "Model"])
+        .size()
+        .reset_index(name="Adet")
+    )
+
+    summary["_sort_mm"] = summary["Genişlik"].apply(mm_sort_key)
+    model_order = {"BOMBE": 1, "DÜZ": 2, "ÇATI MAT": 3, "ÇATI PARLAK": 4}
+    summary["_sort_model"] = summary["Model"].map(model_order).fillna(99)
+
+    summary = summary.sort_values(["_sort_mm", "_sort_model"]).drop(columns=["_sort_mm", "_sort_model"])
+    return summary.reset_index(drop=True)
+
+
 def dataframe_to_txt(df: pd.DataFrame, title: str) -> bytes:
     out = io.StringIO()
 
-    out.write(f"{title}
-")
-    out.write("=" * len(title) + "
-
-")
+    out.write(f"{title}\n")
+    out.write("=" * len(title) + "\n\n")
 
     if df.empty:
-        out.write("Kayıt yok.
-")
+        out.write("Kayıt yok.\n")
         return out.getvalue().encode("utf-8")
 
-    # baskı dostu sabit sütun genişliği
     col_widths = {}
     for col in df.columns:
         max_len = max(df[col].astype(str).map(len).max(), len(col))
         col_widths[col] = max_len + 2
 
-    # başlık satırı
     header = ""
     for col in df.columns:
         header += col.ljust(col_widths[col])
-    out.write(header + "
-")
+    out.write(header + "\n")
 
-    # ayırıcı çizgi
     sep = ""
     for col in df.columns:
-        sep += ("-" * (col_widths[col]-1)) + " "
-    out.write(sep + "
-")
+        sep += ("-" * (col_widths[col] - 1)) + " "
+    out.write(sep + "\n")
 
-    # satırlar
     for _, row in df.iterrows():
         line = ""
         for col in df.columns:
             line += str(row[col]).ljust(col_widths[col])
-        out.write(line + "
-")
+        out.write(line + "\n")
 
-    out.write("
-")
-    return out.getvalue().encode("utf-8")("utf-8")
+    out.write("\n")
+    return out.getvalue().encode("utf-8")
 
 
 st.title("Etiket Üretici")
@@ -772,7 +795,7 @@ with st.expander("Kurallar", expanded=False):
 - Lazer alanı küçük fontla ve satır kırılarak yazılır
 - Üst satırda mağaza adı gösterilir
 - Kalın yazı kullanılmaz
-- Etiketler PDF, diğer 3 çıktı metin dosyası olarak indirilir
+- Etiketler PDF, diğer 4 çıktı metin dosyası olarak indirilir
         """
     )
 
@@ -798,6 +821,7 @@ if uploaded is not None:
             df_production = build_production_dataframe(labels)
             df_personal = build_personalization_dataframe(labels)
             df_check = build_checklist_dataframe(labels)
+            df_summary = build_production_summary(labels)
 
             st.subheader("Üretim Listesi")
             st.dataframe(df_production, use_container_width=True, hide_index=True)
@@ -809,10 +833,14 @@ if uploaded is not None:
             st.markdown("**Mağaza Adı: CPNQ**")
             st.dataframe(df_check, use_container_width=True, hide_index=True)
 
+            st.subheader("Üretim Özeti")
+            st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
             output_pdf = build_labels_pdf(labels)
             txt_production = dataframe_to_txt(df_production, "Üretim Listesi")
             txt_personal = dataframe_to_txt(df_personal, "Kişiselleştirme Listesi")
             txt_check = dataframe_to_txt(df_check, "Mağaza Adı: CPNQ\nKontrol Listesi")
+            txt_summary = dataframe_to_txt(df_summary, "Üretim Özeti")
 
             st.download_button(
                 label="Etiket PDF indir",
@@ -842,52 +870,6 @@ if uploaded is not None:
                 mime="text/plain",
                 use_container_width=True,
             )
-        else:
-            st.warning("Dosya içinden etiket oluşturulamadı.")
-    except Exception as e:
-        st.error(f"Bir hata oluştu: {e}")
-
-
-# üretim sayacı
-
-def build_production_summary(labels: List[Dict[str, str]]) -> pd.DataFrame:
-    rows = []
-    for item in labels:
-        rows.append({
-            "Genişlik": item.get("genislik", ""),
-            "Model": production_model(item.get("model", "")),
-        })
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-
-    df = df[(df["Genişlik"].astype(str).str.strip() != "") & (df["Model"].astype(str).str.strip() != "")]
-
-    summary = (
-        df.groupby(["Genişlik", "Model"]) 
-        .size()
-        .reset_index(name="Adet")
-    )
-
-    summary["_sort_mm"] = summary["Genişlik"].apply(mm_sort_key)
-    model_order = {"BOMBE": 1, "DÜZ": 2, "ÇATI MAT": 3, "ÇATI PARLAK": 4}
-    summary["_sort_model"] = summary["Model"].map(model_order).fillna(99)
-
-    summary = summary.sort_values(["_sort_mm","_sort_model"]).drop(columns=["_sort_mm","_sort_model"])
-
-    return summary.reset_index(drop=True)
-
-
-# UI bölümüne üretim özeti ekleme
-
-            df_summary = build_production_summary(labels)
-
-            st.subheader("Üretim Özeti")
-            st.dataframe(df_summary, use_container_width=True, hide_index=True)
-
-            txt_summary = dataframe_to_txt(df_summary, "Üretim Özeti")
-
             st.download_button(
                 label="Üretim özeti TXT indir",
                 data=txt_summary,
@@ -895,5 +877,9 @@ def build_production_summary(labels: List[Dict[str, str]]) -> pd.DataFrame:
                 mime="text/plain",
                 use_container_width=True,
             )
+        else:
+            st.warning("Dosya içinden etiket oluşturulamadı.")
+    except Exception as e:
+        st.error(f"Bir hata oluştu: {e}")
 
 st.caption("Streamlit Cloud üzerinde çalıştırmaya uygundur.")
