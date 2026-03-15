@@ -66,6 +66,34 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
+def us_size_to_decimal(text: str) -> str:
+    raw = clean_text((text or "").upper().replace("US", "").strip())
+    if not raw:
+        return ""
+    try:
+        if " " in raw and "/" in raw:
+            base, frac = raw.split(" ", 1)
+            num, den = frac.split("/", 1)
+            value = float(base) + (float(num) / float(den))
+        elif "/" in raw:
+            num, den = raw.split("/", 1)
+            value = float(num) / float(den)
+        else:
+            value = float(raw)
+        if value.is_integer():
+            return str(int(value))
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+    except Exception:
+        return clean_text(text)
+
+
+def truncate_text(text: str, max_len: int) -> str:
+    text = clean_text(text)
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
 def strip_footer_noise(text: str) -> str:
     text = re.sub(r"https?://\S+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\b\d{1,2}/\d{1,2}\b", "", text)
@@ -201,7 +229,7 @@ def normalize_size(product_block: str) -> str:
         return ""
     raw = clean_text(strip_footer_noise(m.group(1)))
     m2 = re.search(r"(\d+(?:\s+\d+/\d+)?\s*US)", raw, re.IGNORECASE)
-    return m2.group(1).upper().replace("  ", " ").strip() if m2 else raw
+    return us_size_to_decimal(m2.group(1)) if m2 else us_size_to_decimal(raw)
 
 
 def normalize_laser(product_block: str) -> str:
@@ -416,7 +444,7 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
         if "size for your partner" in parsed:
             ring_sizes.extend([f"{parsed['size for your partner'][0]} US"])
 
-        ring_sizes = [clean_text(x).upper() for x in ring_sizes]
+        ring_sizes = [us_size_to_decimal(x) for x in ring_sizes]
 
         widths = []
         if "width" in parsed:
@@ -458,7 +486,7 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
             if not ring_sizes:
                 m = re.search(r"(\d+(?:\s+\d+/\d+)?\s*US)", ozellikler, re.IGNORECASE)
                 if m:
-                    ring_sizes = [m.group(1).upper()]
+                    ring_sizes = [us_size_to_decimal(m.group(1))]
 
         pair_mode = (
             "set of 2" in urun_adi.lower()
@@ -634,12 +662,8 @@ def mm_sort_key(value: str):
 
 
 def size_sort_key(value: str):
-    text = (value or "").upper().replace("US", "").strip()
+    text = clean_text(value)
     try:
-        if " " in text and "/" in text:
-            base, frac = text.split(" ", 1)
-            num, den = frac.split("/", 1)
-            return float(base) + (float(num) / float(den))
         return float(text)
     except Exception:
         return 9999.0
@@ -675,10 +699,10 @@ def build_personalization_dataframe(labels: List[Dict[str, str]]) -> pd.DataFram
         lazer = item.get("lazer", "")
         if str(lazer).strip():
             rows.append({
-                "Müşteri Adı": item.get("musteri", ""),
+                "Müşteri Adı": truncate_text(item.get("musteri", ""), 24),
                 "Genişlik": item.get("genislik", ""),
                 "Model": production_model(item.get("model", "")),
-                "Kişiselleştirme": lazer,
+                "Kişiselleştirme": truncate_text(lazer, 42),
             })
     df = pd.DataFrame(rows)
     if df.empty:
@@ -691,12 +715,12 @@ def build_checklist_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
     for item in labels:
         rows.append({
             "Sipariş No": item.get("siparis_no", ""),
-            "Müşteri Adı": item.get("musteri", ""),
+            "Müşteri Adı": truncate_text(item.get("musteri", ""), 22),
             "Genişlik": item.get("genislik", ""),
             "Renk": item.get("renk", ""),
             "Model": production_model(item.get("model", "")) if item.get("model", "") != "YENİLEME" else "YENİLEME",
             "Ölçü": item.get("olcu", ""),
-            "Kişiselleştirme": item.get("lazer", ""),
+            "Kişiselleştirme": truncate_text(item.get("lazer", ""), 28),
             "Check": "☐",
         })
     df = pd.DataFrame(rows)
@@ -795,6 +819,7 @@ with st.expander("Kurallar", expanded=False):
 - Lazer alanı küçük fontla ve satır kırılarak yazılır
 - Üst satırda mağaza adı gösterilir
 - Kalın yazı kullanılmaz
+- Ölçüler ondalık gösterilir: 3/4 → 0.75, 4 1/4 → 4.25
 - Etiketler PDF, diğer 4 çıktı metin dosyası olarak indirilir
         """
     )
