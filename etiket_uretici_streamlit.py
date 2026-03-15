@@ -4,6 +4,7 @@ import csv
 from typing import List, Dict
 
 import pandas as pd
+
 import pdfplumber
 import streamlit as st
 from reportlab.lib import colors
@@ -942,4 +943,4 @@ if uploaded is not None:
             )
         else:
             st.warning("Dosya içinden etiket oluşturulamadı.")
-    except Exception as e
+    except Exception as e:
