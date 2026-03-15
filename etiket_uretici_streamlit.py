@@ -42,8 +42,9 @@ LASER_STYLE = ParagraphStyle(
     "laser",
     parent=BASE_STYLE,
     fontName="DejaVuSans",
-    fontSize=4,
-    leading=4.6,
+    fontSize=5,
+    leading=5.6,
+    wordWrap="CJK",
     spaceAfter=0,
     spaceBefore=0,
 )
@@ -509,16 +510,16 @@ def make_label_table(item: Dict[str, str]) -> Table:
     if not (item.get("musteri") or "").strip() and (item.get("urun_adi") or "").strip() and not (item.get("not") or "").strip():
         data[7][1] = p(item.get("urun_adi", ""))
 
-    row_heights = [0.34 * cm, 0.34 * cm, 0.38 * cm, 0.30 * cm, 0.38 * cm, 0.30 * cm, 0.48 * cm, 0.48 * cm]
+    row_heights = [0.34 * cm, 0.34 * cm, 0.38 * cm, 0.30 * cm, 0.38 * cm, 0.30 * cm, 0.65 * cm, 0.45 * cm]
 
     t = Table(data, colWidths=[2.0 * cm, 4.0 * cm], rowHeights=row_heights)
     t.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.45, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ("TOPPADDING", (0, 0), (-1, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 0.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5),
     ]))
     return t
 
@@ -615,7 +616,7 @@ with st.expander("Kurallar", expanded=False):
 - Aynı siparişte 2 ürün varsa 2 etiket
 - Resize listing için Model ve Not: YENİLEME
 - CSV yüklenirse müşteri adı ve diğer alanlar doğrudan kolonlardan okunur
-- Lazer alanı çok küçük fontla yazılır
+- Lazer alanı küçük fontla ve satır kırılarak yazılır
 - Üst satırda mağaza adı gösterilir
 - Kalın yazı kullanılmaz
         """
