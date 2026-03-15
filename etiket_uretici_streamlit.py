@@ -1,6 +1,7 @@
 import io
 import re
 import csv
+import html
 from typing import List, Dict
 
 import pandas as pd
@@ -208,10 +209,18 @@ div[data-testid="stTabs"] button {
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------
-# FONKSİYONLAR
+# YARDIMCI FONKSİYONLAR
 # ---------------------------------------------------
 def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
+
+
+def first_nonempty(*values):
+    for v in values:
+        val = clean_text(str(v))
+        if val:
+            return val
+    return ""
 
 
 def us_size_to_decimal(text: str) -> str:
@@ -485,6 +494,27 @@ def build_product_hint(product_title: str) -> str:
     return ""
 
 
+def shorten_cerasus_product_name(title: str) -> str:
+    t = html.unescape(clean_text(title))
+    low = t.lower()
+
+    if "arabic name necklace" in low:
+        return "Arabic Name Necklace"
+    if "bar pendant" in low or "name bar" in low:
+        return "Bar Pendant Necklace"
+    if "old english letter necklace" in low:
+        return "Old English Letter Necklace"
+    if "seagull necklace" in low:
+        return "Seagull Necklace"
+    if "bird charm necklace" in low:
+        return "Bird Charm Necklace"
+    if "opal ring" in low:
+        return "Opal Ring"
+
+    t = re.split(r"[•,\-]", t)[0]
+    return truncate_text(t, 34)
+
+
 def parse_page(page_text: str) -> List[Dict[str, str]]:
     customer = find_customer_name(page_text)
     order_no = extract_order_no(page_text)
@@ -516,6 +546,9 @@ def parse_page(page_text: str) -> List[Dict[str, str]]:
             "not": note,
             "urun_adi": urun_adi,
             "renk": renk,
+            "sku": "",
+            "urun": "",
+            "zincir_boyu": "",
         })
 
     return labels
@@ -537,6 +570,7 @@ def parse_ozellikler(text: str) -> Dict[str, List[str]]:
     if not text:
         return result
 
+    text = html.unescape(text)
     pairs = re.findall(r"Ad:\s*([^,]+),\s*Değer:\s*([^,]+)", text, flags=re.IGNORECASE)
     for key, value in pairs:
         k = clean_text(key).lower()
@@ -556,6 +590,37 @@ def extract_widths_from_personalization(text: str) -> List[str]:
             w = w[:-2]
         cleaned.append(f"{w}MM")
     return cleaned
+
+
+def extract_cerasus_fields(row: Dict[str, str]) -> Dict[str, str]:
+    urun_adi = html.unescape(row.get("ÜrünAdı", "") or "")
+    ozellikler = html.unescape(row.get("Özellikler", "") or "")
+    parsed = parse_ozellikler(ozellikler)
+
+    zincir_boyu = first_nonempty(
+        (parsed.get("necklace length") or [""])[0],
+        (parsed.get("necklace lenght") or [""])[0],
+    )
+
+    renk = first_nonempty(
+        (parsed.get("color") or [""])[0],
+        (parsed.get("general material") or [""])[0],
+        (parsed.get("material") or [""])[0],
+        (parsed.get("band color") or [""])[0],
+    )
+
+    kisisellestirme = first_nonempty(
+        (parsed.get("personalization") or [""])[0],
+    )
+    kisisellestirme = html.unescape(kisisellestirme).replace('"', "").strip()
+
+    return {
+        "urun": shorten_cerasus_product_name(urun_adi),
+        "zincir_boyu": zincir_boyu,
+        "renk": renk,
+        "kisisellestirme": kisisellestirme,
+        "sku": clean_text(row.get("Sku", "")),
+    }
 
 
 def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
@@ -579,11 +644,40 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
         row = {clean_text(k): clean_text(v) for k, v in raw_row.items() if k is not None}
 
         magaza_adi = row.get("MagazaAdı", "") or row.get("MağazaAdı", "") or "CPNQ"
-        musteri = row.get("Alıcı", "")
+        musteri = html.unescape(row.get("Alıcı", ""))
         siparis_no = row.get("SiparişNumarası", "")
-        urun_adi = row.get("ÜrünAdı", "")
-        ozellikler = row.get("Özellikler", "")
+        urun_adi = html.unescape(row.get("ÜrünAdı", "") or "")
+        ozellikler = html.unescape(row.get("Özellikler", "") or "")
 
+        # CERASUS İÇİN ÖZEL AKIŞ
+        if "cerasus" in magaza_adi.lower():
+            cerasus = extract_cerasus_fields(row)
+
+            adet_raw = clean_text(str(row.get("Adet", "1")))
+            try:
+                adet = max(1, int(float(adet_raw)))
+            except Exception:
+                adet = 1
+
+            for _ in range(adet):
+                labels.append({
+                    "magaza_adi": magaza_adi,
+                    "siparis_no": siparis_no,
+                    "musteri": musteri,
+                    "sku": cerasus["sku"],
+                    "urun": cerasus["urun"],
+                    "zincir_boyu": cerasus["zincir_boyu"],
+                    "renk": cerasus["renk"],
+                    "lazer": cerasus["kisisellestirme"],
+                    "not": "",
+                    "genislik": "",
+                    "model": "",
+                    "olcu": "",
+                    "urun_adi": urun_adi,
+                })
+            continue
+
+        # DİĞER MAĞAZALAR İÇİN MEVCUT AKIŞ
         parsed = parse_ozellikler(ozellikler)
 
         ring_sizes = []
@@ -603,10 +697,11 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
         personalization_values = parsed.get("personalization", [])
         lazer = personalization_values[0] if personalization_values else ""
         lazer = (
-            lazer.replace("&quot;", '"')
-                 .replace("quot;", '"')
-                 .replace('""', '"')
-                 .strip()
+            html.unescape(lazer)
+            .replace("&quot;", '"')
+            .replace("quot;", '"')
+            .replace('""', '"')
+            .strip()
         )
         lazer = lazer.replace('"', "")
 
@@ -659,6 +754,9 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
                     "not": note,
                     "urun_adi": build_product_hint(urun_adi),
                     "renk": renk,
+                    "sku": row.get("Sku", ""),
+                    "urun": "",
+                    "zincir_boyu": "",
                 })
         else:
             labels.append({
@@ -672,6 +770,9 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
                 "not": note,
                 "urun_adi": build_product_hint(urun_adi),
                 "renk": renk,
+                "sku": row.get("Sku", ""),
+                "urun": "",
+                "zincir_boyu": "",
             })
 
     return [x for x in labels if any(str(v).strip() for v in x.values())]
@@ -693,6 +794,40 @@ def p(text: str, laser: bool = False) -> Paragraph:
 
 
 def make_label_table(item: Dict[str, str]) -> Table:
+    magaza = item.get("magaza_adi", "CPNQ")
+
+    if "cerasus" in magaza.lower():
+        data = [
+            [p("Mağaza"), p(magaza)],
+            [p("Sipariş No"), p(item.get("siparis_no", ""))],
+            [p("Müşteri"), p(item.get("musteri", ""))],
+            [p("Ürün"), p(item.get("urun", ""))],
+            [p("Zincir"), p(item.get("zincir_boyu", ""))],
+            [p("Renk"), p(item.get("renk", ""))],
+            [p("Not"), p(item.get("lazer", ""), laser=True)],
+        ]
+
+        row_heights = [
+            0.34 * cm,
+            0.34 * cm,
+            0.42 * cm,
+            0.52 * cm,
+            0.34 * cm,
+            0.34 * cm,
+            0.70 * cm,
+        ]
+
+        t = Table(data, colWidths=[1.7 * cm, 4.3 * cm], rowHeights=row_heights)
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.45, colors.black),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 0.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5),
+        ]))
+        return t
+
     data = [
         [p("Mağaza Adı"), p(item.get("magaza_adi", "CPNQ"))],
         [p("Sipariş No"), p(item.get("siparis_no", ""))],
@@ -869,8 +1004,10 @@ def build_checklist_dataframe(labels: List[Dict[str, str]]) -> pd.DataFrame:
             "Mağaza Adı": item.get("magaza_adi", "CPNQ"),
             "Sipariş No": item.get("siparis_no", ""),
             "Müşteri Adı": truncate_text(item.get("musteri", ""), 24),
-            "Genişlik": item.get("genislik", ""),
+            "Ürün": item.get("urun", ""),
+            "Zincir": item.get("zincir_boyu", ""),
             "Renk": item.get("renk", ""),
+            "Genişlik": item.get("genislik", ""),
             "Model": production_model(item.get("model", "")) if item.get("model", "") != "YENİLEME" else "YENİLEME",
             "Ölçü": item.get("olcu", ""),
             "Kişiselleştirme": truncate_text(item.get("lazer", ""), 30),
