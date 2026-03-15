@@ -38,18 +38,12 @@ BASE_STYLE = ParagraphStyle(
     spaceBefore=0,
 )
 
-BOLD_STYLE = ParagraphStyle(
-    "bold",
-    parent=BASE_STYLE,
-    fontName="DejaVuSans-Bold",
-)
-
 LASER_STYLE = ParagraphStyle(
     "laser",
     parent=BASE_STYLE,
     fontName="DejaVuSans",
-    fontSize=6,
-    leading=6.4,
+    fontSize=4,
+    leading=4.6,
     spaceAfter=0,
     spaceBefore=0,
 )
@@ -225,10 +219,11 @@ def normalize_laser(product_block: str) -> str:
                 break
             laser_parts.append(line)
     laser = clean_text(" ".join(laser_parts))
-    laser = laser.replace('&quot;', '"').replace('quot;', '"')
+    laser = laser.replace('&quot;', '"').replace('quot;', '"').replace('""', '"')
     laser = laser.replace("Font 4-all caps initials", "")
     if laser.startswith(":"):
         laser = laser[1:].strip()
+    laser = laser.replace('"', "")
     return clean_text(laser)
 
 
@@ -395,7 +390,6 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
         siparis_no = row.get("SiparişNumarası", "")
         urun_adi = row.get("ÜrünAdı", "")
         ozellikler = row.get("Özellikler", "")
-        adet = row.get("Adet", "1")
 
         parsed = parse_ozellikler(ozellikler)
 
@@ -415,7 +409,13 @@ def parse_uploaded_csv(csv_bytes: bytes) -> List[Dict[str, str]]:
 
         personalization_values = parsed.get("personalization", [])
         lazer = personalization_values[0] if personalization_values else ""
-        lazer = lazer.strip()
+        lazer = (
+            lazer.replace("&quot;", '"')
+                 .replace("quot;", '"')
+                 .replace('""', '"')
+                 .strip()
+        )
+        lazer = lazer.replace('"', "")
 
         if not widths and lazer:
             widths = extract_widths_from_personalization(lazer)
@@ -487,11 +487,11 @@ def escape_paragraph_text(text: str) -> str:
     return text
 
 
-def p(text: str, bold: bool = False, laser: bool = False) -> Paragraph:
+def p(text: str, laser: bool = False) -> Paragraph:
     safe = escape_paragraph_text(text)
     if laser:
         return Paragraph(safe, LASER_STYLE)
-    return Paragraph(safe, BOLD_STYLE if bold else BASE_STYLE)
+    return Paragraph(safe, BASE_STYLE)
 
 
 def make_label_table(item: Dict[str, str]) -> Table:
@@ -615,8 +615,9 @@ with st.expander("Kurallar", expanded=False):
 - Aynı siparişte 2 ürün varsa 2 etiket
 - Resize listing için Model ve Not: YENİLEME
 - CSV yüklenirse müşteri adı ve diğer alanlar doğrudan kolonlardan okunur
-- Lazer alanı küçük fontla yazılır
+- Lazer alanı çok küçük fontla yazılır
 - Üst satırda mağaza adı gösterilir
+- Kalın yazı kullanılmaz
         """
     )
 
