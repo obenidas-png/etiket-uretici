@@ -2,6 +2,8 @@ import io
 import re
 import csv
 import html
+import zipfile
+from datetime import datetime
 from typing import List, Dict
 
 import pandas as pd
@@ -1167,6 +1169,31 @@ if uploaded is not None:
             )
             txt_summary = dataframe_to_txt(df_summary, "Üretim Özeti")
 
+            # ---------------------------------------------------
+            # DOSYA ADLARI İÇİN TARİH DAMGASI
+            # ---------------------------------------------------
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+            safe_store = re.sub(r"[^A-Za-z0-9_-]+", "_", magaza_adi)
+
+            pdf_filename = f"{safe_store}_etiketler_{timestamp}.pdf"
+            production_filename = f"{safe_store}_uretim_listesi_{timestamp}.txt"
+            personal_filename = f"{safe_store}_kisisellestirme_{timestamp}.txt"
+            check_filename = f"{safe_store}_kontrol_listesi_{timestamp}.txt"
+            summary_filename = f"{safe_store}_uretim_ozeti_{timestamp}.txt"
+            zip_filename = f"{safe_store}_tum_ciktilar_{timestamp}.zip"
+
+            # ---------------------------------------------------
+            # TÜM ÇIKTILARI ZIP HALİNDE HAZIRLA
+            # ---------------------------------------------------
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                zip_file.writestr(pdf_filename, output_pdf)
+                zip_file.writestr(production_filename, txt_production)
+                zip_file.writestr(personal_filename, txt_personal)
+                zip_file.writestr(check_filename, txt_check)
+                zip_file.writestr(summary_filename, txt_summary)
+            zip_buffer.seek(0)
+
             st.markdown('<div class="status-ok">Dosya başarıyla işlendi. Çıktılar indirilmeye hazır.</div>', unsafe_allow_html=True)
 
             c1, c2, c3 = st.columns(3)
@@ -1196,26 +1223,34 @@ if uploaded is not None:
 
             st.markdown('<div class="section-title">Çıktıları İndir</div>', unsafe_allow_html=True)
 
+            st.download_button(
+                "Tüm çıktıları ZIP olarak indir",
+                data=zip_buffer,
+                file_name=zip_filename,
+                mime="application/zip",
+                use_container_width=True,
+            )
+
             d1, d2 = st.columns(2)
             with d1:
                 st.download_button(
                     "Etiket PDF indir",
                     data=output_pdf,
-                    file_name="etiketler.pdf",
+                    file_name=pdf_filename,
                     mime="application/pdf",
                     use_container_width=True,
                 )
                 st.download_button(
                     "Kişiselleştirme listesi indir",
                     data=txt_personal,
-                    file_name="kisisellestirme_listesi.txt",
+                    file_name=personal_filename,
                     mime="text/plain",
                     use_container_width=True,
                 )
                 st.download_button(
                     "Üretim özeti indir",
                     data=txt_summary,
-                    file_name="uretim_ozeti.txt",
+                    file_name=summary_filename,
                     mime="text/plain",
                     use_container_width=True,
                 )
@@ -1224,14 +1259,14 @@ if uploaded is not None:
                 st.download_button(
                     "Üretim listesi indir",
                     data=txt_production,
-                    file_name="uretim_listesi.txt",
+                    file_name=production_filename,
                     mime="text/plain",
                     use_container_width=True,
                 )
                 st.download_button(
                     "Kontrol listesi indir",
                     data=txt_check,
-                    file_name="kontrol_listesi.txt",
+                    file_name=check_filename,
                     mime="text/plain",
                     use_container_width=True,
                 )
