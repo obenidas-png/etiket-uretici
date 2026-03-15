@@ -847,4 +847,53 @@ if uploaded is not None:
     except Exception as e:
         st.error(f"Bir hata oluştu: {e}")
 
+
+# üretim sayacı
+
+def build_production_summary(labels: List[Dict[str, str]]) -> pd.DataFrame:
+    rows = []
+    for item in labels:
+        rows.append({
+            "Genişlik": item.get("genislik", ""),
+            "Model": production_model(item.get("model", "")),
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df = df[(df["Genişlik"].astype(str).str.strip() != "") & (df["Model"].astype(str).str.strip() != "")]
+
+    summary = (
+        df.groupby(["Genişlik", "Model"]) 
+        .size()
+        .reset_index(name="Adet")
+    )
+
+    summary["_sort_mm"] = summary["Genişlik"].apply(mm_sort_key)
+    model_order = {"BOMBE": 1, "DÜZ": 2, "ÇATI MAT": 3, "ÇATI PARLAK": 4}
+    summary["_sort_model"] = summary["Model"].map(model_order).fillna(99)
+
+    summary = summary.sort_values(["_sort_mm","_sort_model"]).drop(columns=["_sort_mm","_sort_model"])
+
+    return summary.reset_index(drop=True)
+
+
+# UI bölümüne üretim özeti ekleme
+
+            df_summary = build_production_summary(labels)
+
+            st.subheader("Üretim Özeti")
+            st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
+            txt_summary = dataframe_to_txt(df_summary, "Üretim Özeti")
+
+            st.download_button(
+                label="Üretim özeti TXT indir",
+                data=txt_summary,
+                file_name="uretim_ozeti.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+
 st.caption("Streamlit Cloud üzerinde çalıştırmaya uygundur.")
