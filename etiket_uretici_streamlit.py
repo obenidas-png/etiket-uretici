@@ -1,6 +1,6 @@
 """
-ETSY ETİKET ÜRETİCİ - Streamlit Uygulaması
-Excel yükle → PDF etiket indir
+ETSY ATÖLYE YÖNETİM SİSTEMİ - Streamlit Uygulaması
+CSV Yükle → PDF Etiket + 3 TXT Listesi Oluştur
 """
 
 import streamlit as st
@@ -15,9 +15,9 @@ import re
 
 # Sayfa ayarları
 st.set_page_config(
-    page_title="Etsy Etiket Üretici",
-    page_icon="🏷️",
-    layout="centered"
+    page_title="Etsy Atölye Yönetim",
+    page_icon="🏭",
+    layout="wide"
 )
 
 # CSS
@@ -25,7 +25,6 @@ st.markdown("""
 <style>
     .main-title {
         text-align: center;
-        color: #2c3e50;
         padding: 20px;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 10px;
@@ -36,56 +35,124 @@ st.markdown("""
         width: 100%;
         background-color: #667eea;
         color: white;
-        padding: 10px;
-        border-radius: 5px;
-        border: none;
         font-weight: bold;
-    }
-    .info-box {
-        background-color: #f0f2f6;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 4px solid #667eea;
-        margin: 10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Başlık
-st.markdown('<h1 class="main-title">🏷️ Etsy Etiket Üretici</h1>', unsafe_allow_html=True)
-
-st.markdown("""
-<div class="info-box">
-📋 <b>Nasıl Kullanılır:</b><br>
-1. Etsy siparişlerinizi Excel olarak yükleyin<br>
-2. "PDF Etiket Oluştur" butonuna tıklayın<br>
-3. Oluşan PDF'i indirin ve yazdırın<br>
-<br>
-<b>Format:</b> 3x5cm çerçeveli etiketler (A4 kağıda 4x9 = 36 etiket)
-</div>
-""", unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">🏭 Etsy Atölye Yönetim Sistemi</h1>', unsafe_allow_html=True)
 
 # Fonksiyonlar
-def extract_model_info(product_text):
-    """Ürün adından model bilgilerini çıkarır"""
-    info = {'model': 'Klasik', 'width': ''}
+def parse_csv(df):
+    """CSV'yi işle ve sipariş listesi oluştur"""
+    orders = []
     
-    product_lower = product_text.lower()
+    for idx, row in df.iterrows():
+        # Özellikler sütununu parse et
+        props = {}
+        if pd.notna(row.get('Özellikler')):
+            parts = str(row['Özellikler']).split(',')
+            for i in range(0, len(parts), 2):
+                if i+1 < len(parts):
+                    key = parts[i].replace('Ad:', '').strip()
+                    value = parts[i+1].replace('Değer:', '').strip()
+                    props[key] = value
+        
+        # Ürün bilgileri
+        product = str(row.get('ÜrünAdı', ''))
+        
+        # Model ve renk tespiti
+        model = ''
+        color = ''
+        width = props.get('Width', '')
+        
+        product_lower = product.lower()
+        
+        # Renk
+        if 'white gold' in product_lower or 'beyaz' in product_lower:
+            color = 'BEYAZ'
+        elif 'yellow gold' in product_lower or 'sarı' in product_lower or 'gold filled' in product_lower:
+            color = 'SARI'
+        
+        # Model
+        if 'resizing' in product_lower or 'size adjustment' in product_lower:
+            model = 'YENİLEME'
+        elif 'bevel' in product_lower:
+            model = 'ÇATI'
+            if 'matte' in product_lower or 'mat' in product_lower:
+                model = 'ÇATI MAT'
+        elif 'dome' in product_lower:
+            model = 'BOMBE'
+        elif 'flat' in product_lower:
+            model = 'DÜZ'
+        elif 'oval' in product_lower or 'solitaire' in product_lower:
+            model = 'OVAL TEKTAŞ'
+        
+        # Genişlik
+        if not width:
+            width_match = re.search(r'(\d+)\s*mm', product_lower)
+            if width_match:
+                width = width_match.group(1) + 'MM'
+        elif width and 'mm' not in width.lower():
+            width = width + 'MM'
+        
+        # Ring size
+        ring_size = props.get('Ring size', props.get('Size for You', ''))
+        
+        # Çift yüzük kontrolü (Set of 2)
+        if 'set of 2' in product_lower or 'Size for Your Partner' in props:
+            size1 = props.get('Size for You', '')
+            size2 = props.get('Size for Your Partner', '')
+            
+            # 2mm ve 4mm tespiti
+            if '2mm' in product_lower:
+                width1 = '2MM'
+                width2 = '4MM'
+            else:
+                width1 = width
+                width2 = width
+            
+            # İki ayrı sipariş oluştur
+            if size1:
+                orders.append({
+                    'Mağaza': row.get('MagazaAdı', ''),
+                    'Sipariş No': row.get('SiparişNumarası', ''),
+                    'Müşteri': row.get('Alıcı', ''),
+                    'Genişlik': width1,
+                    'Renk': color,
+                    'Model': model,
+                    'Ölçü': size1,
+                    'Kişiselleştirme': props.get('Personalization', ''),
+                    'Ürün': product
+                })
+            
+            if size2:
+                orders.append({
+                    'Mağaza': row.get('MagazaAdı', ''),
+                    'Sipariş No': row.get('SiparişNumarası', ''),
+                    'Müşteri': row.get('Alıcı', ''),
+                    'Genişlik': width2,
+                    'Renk': color,
+                    'Model': model,
+                    'Ölçü': size2,
+                    'Kişiselleştirme': props.get('Personalization', ''),
+                    'Ürün': product
+                })
+        else:
+            # Tek sipariş
+            orders.append({
+                'Mağaza': row.get('MagazaAdı', ''),
+                'Sipariş No': row.get('SiparişNumarası', ''),
+                'Müşteri': row.get('Alıcı', ''),
+                'Genişlik': width.upper() if width else '',
+                'Renk': color,
+                'Model': model.upper() if model else '',
+                'Ölçü': ring_size,
+                'Kişiselleştirme': props.get('Personalization', ''),
+                'Ürün': product
+            })
     
-    # Model tespiti
-    if 'bevel' in product_lower:
-        info['model'] = 'Çatı'
-    elif 'dome' in product_lower or 'bombe' in product_lower:
-        info['model'] = 'Bombe'
-    elif 'flat' in product_lower:
-        info['model'] = 'Düz'
-    
-    # Genişlik
-    width_match = re.search(r'(\d+)\s*mm', product_lower)
-    if width_match:
-        info['width'] = f"{width_match.group(1)}mm"
-    
-    return info
+    return pd.DataFrame(orders)
 
 def create_pdf_labels(orders_df):
     """PDF etiketleri oluşturur"""
@@ -93,7 +160,6 @@ def create_pdf_labels(orders_df):
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
     
-    # Etiket boyutları
     label_width = 5 * cm
     label_height = 3 * cm
     margin_x = 1 * cm
@@ -106,94 +172,46 @@ def create_pdf_labels(orders_df):
     label_count = 0
     
     for idx, row in orders_df.iterrows():
-        product = str(row.get('Ürün', ''))
+        col = label_count % labels_per_row
+        row_num = (label_count // labels_per_row) % labels_per_column
         
-        # Resizing service kontrolü
-        is_resizing = 'resizing' in product.lower() or 'service' in product.lower()
+        if label_count > 0 and label_count % labels_per_page == 0:
+            c.showPage()
         
-        # Etiket verisi hazırla
-        if is_resizing:
-            label_data = {
-                'Sipariş No': str(row.get('Sipariş No', row.get('Id', ''))),
-                'Müşteri Adı': str(row.get('Müşteri', row.get('Alıcı', ''))),
-                'Genişlik': '',
-                'Model': 'Resizing',
-                'Ölçü': str(row.get('Ring Size', '')),
-                'Lazer': '',
-                'Not': str(row.get('Kendi Notum', '')) if pd.notna(row.get('Kendi Notum')) else 'Ölçü Değişikliği'
-            }
-            ring_sizes = [label_data['Ölçü']]
-        else:
-            model_info = extract_model_info(product)
-            width = row.get('Width', '')
-            if not width or pd.isna(width):
-                width = model_info.get('width', '')
-            
-            label_data = {
-                'Sipariş No': str(row.get('Sipariş No', row.get('Id', ''))),
-                'Müşteri Adı': str(row.get('Müşteri', row.get('Alıcı', ''))),
-                'Genişlik': str(width) if width else '',
-                'Model': model_info['model'],
-                'Ölçü': str(row.get('Ring Size', '')),
-                'Lazer': '✓' if pd.notna(row.get('Personalization')) else '',
-                'Not': str(row.get('Kendi Notum', '')) if pd.notna(row.get('Kendi Notum')) else ''
-            }
-            
-            # Çoklu ring size
-            ring_size_str = label_data['Ölçü']
-            if ',' in ring_size_str:
-                ring_sizes = [s.strip() for s in ring_size_str.split(',')]
-            else:
-                ring_sizes = [ring_size_str]
+        x = margin_x + (col * label_width)
+        y = page_height - margin_y - ((row_num + 1) * label_height)
         
-        # Her ring size için etiket
-        for ring_size in ring_sizes:
-            col = label_count % labels_per_row
-            row_num = (label_count // labels_per_row) % labels_per_column
-            
-            if label_count > 0 and label_count % labels_per_page == 0:
-                c.showPage()
-            
-            x = margin_x + (col * label_width)
-            y = page_height - margin_y - ((row_num + 1) * label_height)
-            
-            # Etiket çiz
-            label_data_copy = label_data.copy()
-            label_data_copy['Ölçü'] = ring_size
-            draw_label(c, x, y, label_width, label_height, label_data_copy)
-            
-            label_count += 1
+        # Etiket çiz
+        draw_label(c, x, y, label_width, label_height, row)
+        label_count += 1
     
     c.save()
     buffer.seek(0)
-    return buffer, label_count
+    return buffer
 
 def draw_label(c, x, y, width, height, data):
     """Tek etiket çizer"""
-    # Dış çerçeve
     c.setStrokeColor(black)
     c.setLineWidth(1)
     c.rect(x, y, width, height)
     
-    # İç çizgiler
     line_height = height / 7
     for i in range(1, 7):
         line_y = y + (i * line_height)
         c.setLineWidth(0.3)
         c.line(x, line_y, x + width, line_y)
     
-    # Metin
     text_x = x + 0.1 * cm
     font_size = 7
     
     rows = [
-        ('Sipariş No', data['Sipariş No']),
-        ('Müşteri Adı', data['Müşteri Adı']),
-        ('Genişlik', data['Genişlik']),
-        ('Model', data['Model']),
-        ('Ölçü', data['Ölçü']),
-        ('Lazer', data['Lazer']),
-        ('Not', data['Not'])
+        ('Sipariş No', str(data['Sipariş No'])),
+        ('Müşteri Adı', str(data['Ürün'])[:25]),
+        ('Genişlik', str(data['Genişlik'])),
+        ('Model', f"{data['Model']} {data['Renk']}".strip()),
+        ('Ölçü', str(data['Ölçü'])),
+        ('Lazer', data['Kişiselleştirme'][:20] if pd.notna(data['Kişiselleştirme']) else ''),
+        ('Not', '')
     ]
     
     for i, (label, value) in enumerate(rows):
@@ -204,78 +222,176 @@ def draw_label(c, x, y, width, height, data):
         
         c.setFont("Helvetica", font_size)
         value_x = x + 1.7 * cm
+        c.drawString(value_x, row_y, str(value)[:20])
+
+def create_uretim_listesi(orders_df):
+    """Üretim listesi TXT oluşturur"""
+    # YENİLEME siparişlerini hariç tut
+    production = orders_df[orders_df['Model'] != 'YENİLEME'].copy()
+    
+    output = "Üretim Listesi\n"
+    output += "==============\n\n"
+    output += f"{'Genişlik':<10}{'Model':<15}{'Ölçü':<15}\n"
+    output += f"{'-'*9} {'-'*14} {'-'*14}\n"
+    
+    for idx, row in production.iterrows():
+        output += f"{row['Genişlik']:<10}{row['Model']:<15}{row['Ölçü']:<15}\n"
+    
+    return output
+
+def create_kisisellestime_listesi(orders_df):
+    """Kişiselleştirme listesi TXT oluşturur"""
+    personalized = orders_df[orders_df['Kişiselleştirme'].notna()].copy()
+    
+    if len(personalized) == 0:
+        return "Kişiselleştirme gerektiren sipariş yok."
+    
+    output = "Kişiselleştirme Listesi\n"
+    output += "=======================\n\n"
+    output += f"{'Müşteri Adı':>30} {'Yüzük Genişliği':>16} {'Kişiselleştirme Metni':>90}\n"
+    
+    for idx, row in personalized.iterrows():
+        customer = str(row['Müşteri'])[:30]
+        width = str(row['Genişlik'])
+        text = str(row['Kişiselleştirme'])[:80]
+        output += f"{customer:>30} {width:>16} {text:>90}\n"
+    
+    return output
+
+def create_kontrol_listesi(orders_df, store_name=''):
+    """Kontrol listesi TXT oluşturur"""
+    output = f"Mağaza Adı: {store_name}\n"
+    output += "Kontrol Listesi\n"
+    output += "================================\n\n"
+    output += f"{'Sipariş No':<15} {'Müşteri Adı':>25} {'Genişlik':>9} {'Renk':>6} {'Model':>10} {'Ölçü':>10} "
+    output += f"{'Kişiselleştirme':>90} {'Check':>5}\n"
+    
+    for idx, row in orders_df.iterrows():
+        order_no = str(row['Sipariş No'])
+        customer = str(row['Müşteri'])[:25]
+        width = str(row['Genişlik'])
+        color = str(row['Renk'])
+        model = str(row['Model'])[:10]
+        size = str(row['Ölçü'])
+        pers = str(row['Kişiselleştirme'])[:80] if pd.notna(row['Kişiselleştirme']) else ''
         
-        if len(str(value)) > 18:
-            value = str(value)[:15] + "..."
-        
-        c.drawString(value_x, row_y, str(value))
+        output += f"{order_no:<15} {customer:>25} {width:>9} {color:>6} {model:>10} {size:>10} {pers:>90} {'☐':>5}\n"
+    
+    return output
 
 # Ana uygulama
-st.markdown("### 📤 Excel Dosyası Yükle")
+col1, col2 = st.columns([2, 1])
 
-uploaded_file = st.file_uploader(
-    "Etsy siparişlerinizi içeren Excel dosyasını seçin",
-    type=['xlsx', 'xls', 'csv'],
-    help="Etsy'den export ettiğiniz sipariş dosyasını yükleyin"
-)
+with col1:
+    st.markdown("### 📤 CSV Dosyası Yükle")
+    uploaded_file = st.file_uploader(
+        "Etsy siparişlerinizi içeren CSV dosyasını seçin (order-detail.csv)",
+        type=['csv'],
+        help="Etsy'den export ettiğiniz order-detail.csv dosyasını yükleyin"
+    )
+
+with col2:
+    st.markdown("### ℹ️ Bilgi")
+    st.info("""
+    **Oluşacak Dosyalar:**
+    - 📄 PDF Etiketler (3x5cm)
+    - 📝 Üretim Listesi
+    - 📝 Kişiselleştirme Listesi
+    - 📝 Kontrol Listesi
+    """)
 
 if uploaded_file:
     try:
-        # Excel'i oku
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
+        # CSV'yi oku
+        df = pd.read_csv(uploaded_file)
+        st.success(f"✅ {len(df)} ham sipariş yüklendi!")
         
-        st.success(f"✅ {len(df)} sipariş yüklendi!")
+        # İşle
+        with st.spinner("Siparişler işleniyor..."):
+            orders_df = parse_csv(df)
+        
+        st.success(f"✅ {len(orders_df)} sipariş işlendi!")
         
         # Önizleme
-        with st.expander("📋 Sipariş Önizlemesi (İlk 5 Satır)"):
-            st.dataframe(df.head())
+        with st.expander("📋 İşlenmiş Siparişler"):
+            st.dataframe(orders_df)
         
-        # Sütun kontrolü
-        st.markdown("### 🔍 Sütun Kontrolü")
-        cols = st.columns(3)
+        # İstatistikler
+        st.markdown("### 📊 Özet")
+        col1, col2, col3, col4 = st.columns(4)
         
-        with cols[0]:
-            st.info(f"**Sipariş No:** {'✅' if 'Sipariş No' in df.columns or 'Id' in df.columns else '❌'}")
-        with cols[1]:
-            st.info(f"**Müşteri:** {'✅' if 'Müşteri' in df.columns or 'Alıcı' in df.columns else '❌'}")
-        with cols[2]:
-            st.info(f"**Ürün:** {'✅' if 'Ürün' in df.columns else '❌'}")
+        with col1:
+            st.metric("Toplam Sipariş", len(orders_df))
+        with col2:
+            st.metric("Kişiselleştirme", orders_df['Kişiselleştirme'].notna().sum())
+        with col3:
+            st.metric("Farklı Model", orders_df['Model'].nunique())
+        with col4:
+            yenileme = len(orders_df[orders_df['Model'] == 'YENİLEME'])
+            st.metric("Yenileme", yenileme)
         
-        # PDF oluştur butonu
-        st.markdown("### 🎨 PDF Oluştur")
+        # Dosyaları oluştur
+        st.markdown("### 🎨 Dosyaları Oluştur")
         
-        if st.button("🏷️ PDF Etiket Oluştur", type="primary"):
-            with st.spinner("PDF oluşturuluyor..."):
-                pdf_buffer, total_labels = create_pdf_labels(df)
+        if st.button("🚀 TÜM DOSYALARI OLUŞTUR", type="primary"):
+            with st.spinner("Dosyalar oluşturuluyor..."):
+                # PDF
+                pdf_buffer = create_pdf_labels(orders_df)
                 
-                st.success(f"✅ {total_labels} etiket başarıyla oluşturuldu!")
-                
-                # İndir butonu
+                # TXT dosyaları
+                uretim_txt = create_uretim_listesi(orders_df)
+                kisisel_txt = create_kisisellestime_listesi(orders_df)
+                store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else ''
+                kontrol_txt = create_kontrol_listesi(orders_df, store_name)
+            
+            st.success("✅ Tüm dosyalar hazır!")
+            st.balloons()
+            
+            # İndirme butonları
+            col1, col2 = st.columns(2)
+            
+            with col1:
                 st.download_button(
-                    label="📥 PDF İndir",
+                    label="📥 PDF Etiketler İndir",
                     data=pdf_buffer,
                     file_name=f"etiketler_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                     mime="application/pdf"
                 )
                 
-                st.balloons()
+                st.download_button(
+                    label="📥 Üretim Listesi İndir",
+                    data=uretim_txt.encode('utf-8'),
+                    file_name=f"uretim_listesi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain"
+                )
+            
+            with col2:
+                st.download_button(
+                    label="📥 Kişiselleştirme Listesi İndir",
+                    data=kisisel_txt.encode('utf-8'),
+                    file_name=f"kisisellestime_listesi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain"
+                )
+                
+                st.download_button(
+                    label="📥 Kontrol Listesi İndir",
+                    data=kontrol_txt.encode('utf-8'),
+                    file_name=f"kontrol_listesi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain"
+                )
     
     except Exception as e:
         st.error(f"❌ Hata: {str(e)}")
-        st.info("💡 Excel dosyanızda 'Sipariş No', 'Müşteri', 'Ürün' sütunlarının olduğundan emin olun.")
+        st.info("💡 Lütfen order-detail.csv formatında dosya yüklediğinizden emin olun.")
 
 else:
-    st.info("👆 Lütfen Excel dosyanızı yükleyin")
+    st.info("👆 Lütfen CSV dosyanızı yükleyin")
 
 # Footer
 st.markdown("---")
 st.markdown("""
-<div style="text-align: center; color: #666; padding: 20px;">
-    <b>🏷️ Etsy Etiket Üretici v2.0</b><br>
-    3x5cm Çerçeveli PDF Etiketler<br>
-    Model Çevirileri: Dome→Bombe, Flat→Düz, Bevel→Çatı
+<div style="text-align: center; color: #666;">
+    <b>🏭 Etsy Atölye Yönetim Sistemi v1.0</b><br>
+    CSV → PDF Etiket + 3 TXT Liste
 </div>
 """, unsafe_allow_html=True)
