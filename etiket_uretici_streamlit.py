@@ -227,7 +227,22 @@ def create_pdf_labels(orders_df):
     return buffer
 
 def draw_label(c, x, y, width, height, data):
-    """Tek etiket çizer - Mağazaya göre farklı format"""
+    """Tek etiket çizer - Mağazaya göre farklı format - Türkçe ASCII dönüşümü"""
+    
+    # Türkçe karakterleri ASCII'ye çevir
+    def turkce_to_ascii(text):
+        if not text or pd.isna(text):
+            return ''
+        text = str(text)
+        replacements = {
+            'ı': 'i', 'İ': 'I', 'ş': 's', 'Ş': 'S',
+            'ğ': 'g', 'Ğ': 'G', 'ü': 'u', 'Ü': 'U',
+            'ö': 'o', 'Ö': 'O', 'ç': 'c', 'Ç': 'C'
+        }
+        for tr_char, ascii_char in replacements.items():
+            text = text.replace(tr_char, ascii_char)
+        return text
+    
     c.setStrokeColor(black)
     c.setLineWidth(1)
     c.rect(x, y, width, height)
@@ -253,15 +268,15 @@ def draw_label(c, x, y, width, height, data):
             note = note.replace('&quot;', '"')
             note = note.replace('&#39;', "'")
             note = note.replace('&amp;', '&')
-            note = note[:30]
+            note = turkce_to_ascii(note[:30])
         
         rows = [
-            ('Mağaza', 'CerasusJewelry'),
-            ('Sipariş No', str(data['Sipariş No'])),
-            ('Müşteri', str(data['Müşteri'])[:20]),
-            ('Ürün', str(data['Ürün'])[:25]),
-            ('Zincir', ''),  # CSV'de zincir bilgisi yoksa boş
-            ('Renk', str(data['Renk'])[:15]),
+            ('Magaza', 'CerasusJewelry'),
+            ('Siparis No', str(data['Sipariş No'])),
+            ('Musteri', turkce_to_ascii(str(data['Müşteri'])[:20])),
+            ('Urun', turkce_to_ascii(str(data['Ürün'])[:25])),
+            ('Zincir', ''),
+            ('Renk', turkce_to_ascii(str(data['Renk'])[:15])),
             ('Not', note)
         ]
     else:
@@ -281,14 +296,14 @@ def draw_label(c, x, y, width, height, data):
             pers_text = pers_text.replace('&amp;', '&')
             pers_text = pers_text[:30]
         
-        customer_name = str(data['Müşteri'])[:25]
+        customer_name = turkce_to_ascii(str(data['Müşteri'])[:25])
         
         rows = [
-            ('Sipariş No', str(data['Sipariş No'])),
-            ('Müşteri Adı', customer_name),
-            ('Genişlik', str(data['Genişlik'])),
-            ('Model', f"{data['Model']} {data['Renk']}".strip()),
-            ('Ölçü', str(data['Ölçü'])),
+            ('Siparis No', str(data['Sipariş No'])),
+            ('Musteri Adi', customer_name),
+            ('Genislik', str(data['Genişlik'])),
+            ('Model', turkce_to_ascii(f"{data['Model']} {data['Renk']}".strip())),
+            ('Olcu', str(data['Ölçü'])),
             ('Lazer', pers_text),
             ('Not', '')
         ]
@@ -306,7 +321,7 @@ def draw_label(c, x, y, width, height, data):
         try:
             c.drawString(value_x, row_y, str(value))
         except:
-            safe_value = str(value).encode('latin-1', 'replace').decode('latin-1')
+            safe_value = turkce_to_ascii(str(value))
             c.drawString(value_x, row_y, safe_value)
 
 def create_uretim_listesi(orders_df):
