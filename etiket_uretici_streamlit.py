@@ -128,7 +128,7 @@ def parse_csv(df):
                 color = 'SARI'
             
             # Model
-            if 'resizing' in product_lower or 'size adjustment' in product_lower:
+            if 'resizing' in product_lower or 'size adjustment' in product_lower or 'replacement' in product_lower:
                 model = 'YENİLEME'
             elif 'bevel' in product_lower:
                 model = 'ÇATI'
@@ -457,9 +457,9 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.markdown("### 📤 CSV Dosyası Yükle")
     uploaded_file = st.file_uploader(
-        "Etsy siparişlerinizi içeren CSV dosyasını seçin (order-detail.csv)",
+        "Etsy siparişlerinizi içeren CSV dosyasını seçin",
         type=['csv'],
-        help="Etsy'den export ettiğiniz order-detail.csv dosyasını yükleyin"
+        help="Etsy'den export ettiğiniz CSV dosyasını yükleyin (dosya adı önemli değil, format önemli)"
     )
 
 with col2:
@@ -581,7 +581,8 @@ if uploaded_file:
     
     except Exception as e:
         st.error(f"❌ Hata: {str(e)}")
-        st.info("💡 Lütfen order-detail.csv formatında dosya yüklediğinizden emin olun.")
+        st.info("💡 CSV dosyanızda şu sütunlar olmalı: MagazaAdı, Alıcı, SiparişNumarası, ÜrünAdı, Özellikler")
+        st.info("📌 Dosya adı önemli değil - içeriği Etsy'den export ettiğiniz formatta olmalı.")
 
 else:
     st.info("👆 Lütfen CSV dosyanızı yükleyin")
