@@ -202,6 +202,10 @@ def create_pdf_labels(orders_df):
     margin_x = 1 * cm
     margin_y = 1 * cm
     
+    # Etiketler arası boşluk
+    gap_x = 0.3 * cm  # Yatay boşluk
+    gap_y = 0.3 * cm  # Dikey boşluk
+    
     labels_per_row = 4
     labels_per_column = 9
     labels_per_page = labels_per_row * labels_per_column
@@ -215,8 +219,9 @@ def create_pdf_labels(orders_df):
         if label_count > 0 and label_count % labels_per_page == 0:
             c.showPage()
         
-        x = margin_x + (col * label_width)
-        y = page_height - margin_y - ((row_num + 1) * label_height)
+        # Boşluklu pozisyon hesaplama
+        x = margin_x + (col * (label_width + gap_x))
+        y = page_height - margin_y - ((row_num + 1) * (label_height + gap_y))
         
         # Etiket çiz
         draw_label(c, x, y, label_width, label_height, row)
