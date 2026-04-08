@@ -437,12 +437,15 @@ def create_kisisellestime_listesi(orders_df):
     return output
 
 def create_kontrol_listesi(orders_df, store_name=''):
-    """Kontrol listesi TXT oluşturur - Türkçe ve özel karakter desteği"""
+    """Kontrol listesi TXT oluşturur - Çizgili, büyük checkbox"""
     output = f"Mağaza Adı: {store_name}\n"
     output += "Kontrol Listesi\n"
-    output += "================================\n\n"
+    output += "=" * 170 + "\n\n"
+    
+    # Başlık
     output += f"{'Sipariş No':<15} {'Müşteri Adı':>25} {'Genişlik':>9} {'Renk':>6} {'Model':>10} {'Ölçü':>10} "
-    output += f"{'Kişiselleştirme':>90} {'Check':>5}\n"
+    output += f"{'Kişiselleştirme':>90} {'CHECK':>8}\n"
+    output += "-" * 170 + "\n"
     
     for idx, row in orders_df.iterrows():
         order_no = str(row['Sipariş No'])
@@ -463,7 +466,10 @@ def create_kontrol_listesi(orders_df, store_name=''):
             pers = pers.replace('\\n', ' ')
             pers = pers[:100]
         
-        output += f"{order_no:<15} {customer:>25} {width:>9} {color:>6} {model:>10} {size:>10} {pers:>90} {'☐':>5}\n"
+        # Satır
+        output += f"{order_no:<15} {customer:>25} {width:>9} {color:>6} {model:>10} {size:>10} {pers:>90} {'[  ]':>8}\n"
+        # Her satırdan sonra çizgi
+        output += "-" * 170 + "\n"
     
     return output
 
