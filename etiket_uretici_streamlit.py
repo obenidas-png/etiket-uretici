@@ -64,7 +64,23 @@ def parse_csv(df):
         store_name = str(row.get('MagazaAdı', ''))
         store_code = get_store_code(store_name)
         
+        # Ürün bilgileri
+        product = str(row.get('ÜrünAdı', ''))
+        product_lower = product.lower()
+        
+        # Özel hizmetleri atla (gerçek ürün değil)
+        if any(keyword in product_lower for keyword in ['price adjustment', 'shipping fee', 'shipping cost', 'additional fee', 'extra charge']):
+            continue  # Bu siparişi atla, bir sonrakine geç
+        
         # Özellikler sütununu parse et
+        props = {}
+        if pd.notna(row.get('Özellikler')):
+            parts = str(row['Özellikler']).split(',')
+            for i in range(0, len(parts), 2):
+                if i+1 < len(parts):
+                    key = parts[i].replace('Ad:', '').strip()
+                    value = parts[i+1].replace('Değer:', '').strip()
+                    props[key] = value
         props = {}
         if pd.notna(row.get('Özellikler')):
             parts = str(row['Özellikler']).split(',')
