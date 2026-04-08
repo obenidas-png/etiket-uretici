@@ -128,11 +128,17 @@ def parse_csv(df):
             
             # Genişlik
             if not width:
+                # Özellikler'de Width yoksa ürün adından çıkar
                 width_match = re.search(r'(\d+)\s*mm', product_lower)
                 if width_match:
                     width = width_match.group(1) + 'MM'
-            elif width and 'mm' not in width.lower():
-                width = width + 'MM'
+            else:
+                # Özellikler'de Width varsa düzenle
+                width = str(width).strip()
+                if width and 'mm' not in width.lower():
+                    width = width.upper() + 'MM'
+                else:
+                    width = width.upper()  # 4mm -> 4MM
             
             # Ring size
             ring_size = props.get('Ring size', props.get('Size for You', ''))
@@ -143,25 +149,35 @@ def parse_csv(df):
                 size2 = props.get('Size for Your Partner', '')
                 
                 # Set of 2 ürün adından genişlik bilgilerini çıkar
-                # "Hers size 6: 2mm / His size 11 1/2: 4mm" gibi
                 width1 = '2MM'  # Varsayılan kadın genişliği
                 width2 = '4MM'  # Varsayılan erkek genişliği
                 
-                # Ürün adından gerçek genişlikleri bul
-                if 'hers' in product_lower and 'his' in product_lower:
-                    # "Hers size 6: 2mm / His size 11: 4mm" formatı
-                    hers_match = re.search(r'hers[^:]*:\s*(\d+)\s*mm', product_lower)
-                    his_match = re.search(r'his[^:]*:\s*(\d+)\s*mm', product_lower)
+                # Önce Personalization alanından bak (en doğru yer burası!)
+                personalization = props.get('Personalization', '')
+                if personalization:
+                    pers_lower = personalization.lower()
+                    hers_match = re.search(r'hers[^:]*:\s*(\d+)\s*mm', pers_lower)
+                    his_match = re.search(r'his[^:]*:\s*(\d+)\s*mm', pers_lower)
                     if hers_match:
                         width1 = hers_match.group(1) + 'MM'
                     if his_match:
                         width2 = his_match.group(1) + 'MM'
-                elif '2mm' in product_lower and '4mm' in product_lower:
-                    width1 = '2MM'
-                    width2 = '4MM'
-                elif width:  # Props'tan gelen genişlik varsa
-                    width1 = width
-                    width2 = width
+                
+                # Personalization'da yoksa ürün adından bak
+                if width1 == '2MM' or width2 == '4MM':  # Hala varsayılan değerlerdeyse
+                    if 'hers' in product_lower and 'his' in product_lower:
+                        hers_match = re.search(r'hers[^:]*:\s*(\d+)\s*mm', product_lower)
+                        his_match = re.search(r'his[^:]*:\s*(\d+)\s*mm', product_lower)
+                        if hers_match:
+                            width1 = hers_match.group(1) + 'MM'
+                        if his_match:
+                            width2 = his_match.group(1) + 'MM'
+                    elif '2mm' in product_lower and '4mm' in product_lower:
+                        width1 = '2MM'
+                        width2 = '4MM'
+                    elif width:  # Props'tan gelen genişlik varsa
+                        width1 = width
+                        width2 = width
                 
                 # İki ayrı sipariş oluştur
                 if size1:
