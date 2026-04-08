@@ -73,17 +73,18 @@ def parse_csv(df):
             if len(product_clean) > 40:
                 product_clean = product_clean[:37] + "..."
             
-            # Renk bilgisi
-            color = ''
-            product_lower = product.lower()
-            if '14k yellow gold' in product_lower or 'yellow gold' in product_lower:
-                color = '14K Yellow Gold'
-            elif '14k white gold' in product_lower or 'white gold' in product_lower:
-                color = '14K White Gold'
-            elif '14k rose gold' in product_lower or 'rose gold' in product_lower:
-                color = '14K Rose Gold'
-            elif 'sterling silver' in product_lower or 'silver' in product_lower:
-                color = 'Sterling Silver'
+            # Renk bilgisi - Özellikler'den veya ürün adından
+            color = props.get('Metal', '')  # Önce props'tan bak
+            if not color:  # Props'ta yoksa ürün adından çıkar
+                product_lower = product.lower()
+                if '14k yellow gold' in product_lower or 'yellow gold' in product_lower:
+                    color = '14K Yellow Gold'
+                elif '14k white gold' in product_lower or 'white gold' in product_lower:
+                    color = '14K White Gold'
+                elif '14k rose gold' in product_lower or 'rose gold' in product_lower:
+                    color = '14K Rose Gold'
+                elif 'sterling silver' in product_lower or 'silver' in product_lower:
+                    color = 'Sterling Silver'
             
             orders.append({
                 'Mağaza': store_name,
@@ -141,11 +142,24 @@ def parse_csv(df):
                 size1 = props.get('Size for You', '')
                 size2 = props.get('Size for Your Partner', '')
                 
-                # 2mm ve 4mm tespiti
-                if '2mm' in product_lower:
+                # Set of 2 ürün adından genişlik bilgilerini çıkar
+                # "Hers size 6: 2mm / His size 11 1/2: 4mm" gibi
+                width1 = '2MM'  # Varsayılan kadın genişliği
+                width2 = '4MM'  # Varsayılan erkek genişliği
+                
+                # Ürün adından gerçek genişlikleri bul
+                if 'hers' in product_lower and 'his' in product_lower:
+                    # "Hers size 6: 2mm / His size 11: 4mm" formatı
+                    hers_match = re.search(r'hers[^:]*:\s*(\d+)\s*mm', product_lower)
+                    his_match = re.search(r'his[^:]*:\s*(\d+)\s*mm', product_lower)
+                    if hers_match:
+                        width1 = hers_match.group(1) + 'MM'
+                    if his_match:
+                        width2 = his_match.group(1) + 'MM'
+                elif '2mm' in product_lower and '4mm' in product_lower:
                     width1 = '2MM'
                     width2 = '4MM'
-                else:
+                elif width:  # Props'tan gelen genişlik varsa
                     width1 = width
                     width2 = width
                 
@@ -302,15 +316,16 @@ def draw_label(c, x, y, width, height, data):
             pers_text = pers_text[:30]
         
         customer_name = turkce_to_ascii(str(data['Müşteri'])[:25])
+        store_display = turkce_to_ascii(str(data.get('Mağaza', 'CPNQ')))
         
         rows = [
+            ('Magaza', store_display),
             ('Siparis No', str(data['Sipariş No'])),
             ('Musteri Adi', customer_name),
             ('Genislik', str(data['Genişlik'])),
             ('Model', turkce_to_ascii(f"{data['Model']} {data['Renk']}".strip())),
             ('Olcu', str(data['Ölçü'])),
-            ('Lazer', pers_text),
-            ('Not', '')
+            ('Lazer', pers_text)
         ]
     
     # Metni yaz
