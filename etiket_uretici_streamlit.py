@@ -47,8 +47,22 @@ def parse_csv(df):
     """CSV'yi işle ve sipariş listesi oluştur"""
     orders = []
     
+    # Mağaza adı kısaltmaları
+    def get_store_code(store_name):
+        """Mağaza adını kısa koda çevir"""
+        store_lower = str(store_name).lower()
+        if 'foria' in store_lower:
+            return 'FRY'
+        elif 'chepniq' in store_lower:
+            return 'CPQ'
+        elif 'cerasus' in store_lower:
+            return 'CRSS'
+        else:
+            return store_name[:4].upper()  # İlk 4 harf
+    
     for idx, row in df.iterrows():
         store_name = str(row.get('MagazaAdı', ''))
+        store_code = get_store_code(store_name)
         
         # Özellikler sütununu parse et
         props = {}
@@ -87,7 +101,7 @@ def parse_csv(df):
                     color = 'Sterling Silver'
             
             orders.append({
-                'Mağaza': store_name,
+                'Mağaza': store_code,
                 'Sipariş No': row.get('SiparişNumarası', ''),
                 'Müşteri': row.get('Alıcı', ''),
                 'Genişlik': '',
@@ -183,7 +197,7 @@ def parse_csv(df):
                 # İki ayrı sipariş oluştur
                 if size1:
                     orders.append({
-                        'Mağaza': store_name,
+                        'Mağaza': store_code,
                         'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''),
                         'Genişlik': width1,
@@ -196,7 +210,7 @@ def parse_csv(df):
                 
                 if size2:
                     orders.append({
-                        'Mağaza': store_name,
+                        'Mağaza': store_code,
                         'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''),
                         'Genişlik': width2,
@@ -209,7 +223,7 @@ def parse_csv(df):
             else:
                 # Tek sipariş
                 orders.append({
-                    'Mağaza': store_name,
+                    'Mağaza': store_code,
                     'Sipariş No': row.get('SiparişNumarası', ''),
                     'Müşteri': row.get('Alıcı', ''),
                     'Genişlik': width.upper() if width else '',
@@ -307,7 +321,7 @@ def draw_label(c, x, y, width, height, data):
             note = turkce_to_ascii(note[:30])
         
         rows = [
-            ('Magaza', 'CerasusJewelry'),
+            ('Magaza', 'CRSS'),
             ('Siparis No', str(data['Sipariş No'])),
             ('Musteri', turkce_to_ascii(str(data['Müşteri'])[:20])),
             ('Urun', turkce_to_ascii(str(data['Ürün'])[:25])),
@@ -333,7 +347,7 @@ def draw_label(c, x, y, width, height, data):
             pers_text = pers_text[:30]
         
         customer_name = turkce_to_ascii(str(data['Müşteri'])[:25])
-        store_display = turkce_to_ascii(str(data.get('Mağaza', 'CPNQ')))
+        store_display = str(data.get('Mağaza', 'CPQ'))  # Zaten kısaltılmış geliyor
         
         rows = [
             ('Magaza', store_display),
