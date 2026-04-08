@@ -102,7 +102,8 @@ def parse_csv(df):
             # Model ve renk tespiti
             model = ''
             color = ''
-            width = props.get('Width', '')
+            # Width veya Band Width'i al
+            width = props.get('Width', props.get('Band Width', ''))
             
             product_lower = product.lower()
             
