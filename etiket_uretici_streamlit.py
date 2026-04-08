@@ -199,12 +199,12 @@ def create_pdf_labels(orders_df):
     
     label_width = 5 * cm
     label_height = 3 * cm
-    margin_x = 1 * cm
-    margin_y = 1 * cm
+    margin_x = 0.2 * cm  # 2mm kenar boşluğu
+    margin_y = 0.2 * cm  # 2mm kenar boşluğu
     
-    # Etiketler arası boşluk
-    gap_x = 0.3 * cm  # Yatay boşluk
-    gap_y = 0.3 * cm  # Dikey boşluk
+    # Etiketler arası boşluk (makasla kesim için)
+    gap_x = 0.15 * cm  # 1.5mm yatay boşluk
+    gap_y = 0.15 * cm  # 1.5mm dikey boşluk
     
     labels_per_row = 4
     labels_per_column = 9
