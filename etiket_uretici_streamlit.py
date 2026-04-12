@@ -649,7 +649,50 @@ def create_kontrol_listesi(orders_df, store_name=''):
 
 
 # ── Ana uygulama ──────────────────────────────
-tab1, tab2 = st.tabs(["📦 Sipariş Yükle & Dosyalar", "📊 Sipariş Durumu Takibi"])
+st.markdown("""
+<style>
+/* Tab genel stil */
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 8px;
+}
+[data-testid="stTabs"] button[role="tab"] {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    padding: 10px 24px !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+/* Tab 1 - Mavi */
+[data-testid="stTabs"] button[role="tab"]:nth-child(1) {
+    background-color: #1a3a5c !important;
+    color: white !important;
+}
+[data-testid="stTabs"] button[role="tab"]:nth-child(1):hover {
+    background-color: #245080 !important;
+}
+[data-testid="stTabs"] button[role="tab"]:nth-child(1)[aria-selected="true"] {
+    background-color: #2d6aa0 !important;
+    color: white !important;
+    border-bottom: 3px solid #5ba3d9 !important;
+}
+/* Tab 2 - Kırmızı */
+[data-testid="stTabs"] button[role="tab"]:nth-child(2) {
+    background-color: #5c1a1a !important;
+    color: white !important;
+}
+[data-testid="stTabs"] button[role="tab"]:nth-child(2):hover {
+    background-color: #7a2222 !important;
+}
+[data-testid="stTabs"] button[role="tab"]:nth-child(2)[aria-selected="true"] {
+    background-color: #a03030 !important;
+    color: white !important;
+    border-bottom: 3px solid #e07070 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+tab1, tab2 = st.tabs(["📦 SİPARİŞ YÜKLE & DOSYALAR", "🚨 SORUNLU SİPARİŞ TAKİBİ"])
 
 with tab2:
     st.markdown("### 🚨 Sorunlu Sipariş Takibi")
@@ -674,6 +717,15 @@ with tab2:
             goster_df = goster_df[goster_df["Not"].notna() & (goster_df["Not"].astype(str).str.strip() != "")]
         if durum_filtre != "Tümü":
             goster_df = goster_df[goster_df["Durum"] == durum_filtre]
+        # Güncelleme tarihine göre sırala (en eski üste, tarihi olmayanlar sona)
+        def parse_tarih(t):
+            try:
+                return pd.to_datetime(t, format="%d.%m.%Y %H:%M")
+            except:
+                return pd.Timestamp.max
+        goster_df = goster_df.copy()
+        goster_df["_sort"] = goster_df["Güncelleme Saati"].apply(parse_tarih)
+        goster_df = goster_df.sort_values("_sort", ascending=True).drop(columns=["_sort"])
         st.markdown(f"**{len(goster_df)} kayıt**")
     else:
         goster_df = pd.DataFrame(columns=SHEET_COLS)
@@ -710,8 +762,24 @@ with tab2:
 
             col_a, col_b = st.columns([2, 1])
             with col_a:
-                yeni_not = st.text_area("Sorun Notu", value=not_text if not_text != "nan" else "",
-                    placeholder="Sorunu buraya yazın...", key=f"not_{siparis_no}_{idx}")
+                # Mevcut notu kategori + ek not olarak ayır
+                mevcut_kategori = ""
+                mevcut_aciklama = not_text if not_text not in ["", "nan"] else ""
+                for _tip in ["Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"]:
+                    if mevcut_aciklama.startswith(_tip):
+                        mevcut_kategori = _tip
+                        mevcut_aciklama = mevcut_aciklama[len(_tip):].lstrip(" |-").strip()
+                        break
+                sorun_tipi = st.selectbox(
+                    "Sorun Kategorisi",
+                    ["Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"],
+                    index=["Ölçü Değişikliği","Genişlik Yok","Adres-Kargo","İade-İptal","Kişiselleştirme","Diğer"].index(mevcut_kategori)
+                    if mevcut_kategori in ["Ölçü Değişikliği","Genişlik Yok","Adres-Kargo","İade-İptal","Kişiselleştirme","Diğer"] else 0,
+                    key=f"tip_{siparis_no}_{idx}"
+                )
+                ek_not = st.text_area("Ek Not (opsiyonel)", value=mevcut_aciklama,
+                    placeholder="Ek açıklama...", key=f"not_{siparis_no}_{idx}", height=80)
+                yeni_not = sorun_tipi + (" - " + ek_not if ek_not.strip() else "")
             with col_b:
                 yeni_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"],
                     index=["⏳ Bekliyor","🔄 İşlemde","✅ Çözüldü"].index(durum)
@@ -743,11 +811,15 @@ with tab2:
             m_genislik = st.text_input("Genişlik", key="m_genislik")
         with col_m2:
             m_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="m_durum")
-            m_not = st.text_area("Sorun Notu *", key="m_not", height=100)
+            m_sorun_tipi = st.selectbox("Sorun Kategorisi *",
+                ["Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"],
+                key="m_sorun_tipi")
+            m_ek_not = st.text_area("Ek Not (opsiyonel)", key="m_not", height=80)
+            m_not = m_sorun_tipi + (" - " + m_ek_not if m_ek_not.strip() else "")
             m_kullanici = st.selectbox("Düzenleyen *", ["SY", "CK", "GD", "HY"], key="m_kullanici")
         if st.button("➕ Ekle", key="m_ekle", type="primary"):
-            if not m_siparis_no or not m_not or not m_kullanici:
-                st.warning("Sipariş No, Sorun Notu ve Adınız zorunlu.")
+            if not m_siparis_no or not m_kullanici:
+                st.warning("Sipariş No ve Düzenleyen zorunlu.")
             else:
                 ok = mark_as_problematic(m_siparis_no, m_musteri, "", m_genislik, "", "", m_not, m_durum, m_kullanici)
                 if ok:
