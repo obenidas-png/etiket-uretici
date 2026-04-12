@@ -503,37 +503,20 @@ if uploaded_file:
         if st.session_state.get('files_created', False):
             st.markdown("### 📥 Dosyaları İndir")
             ts = st.session_state.get('ts', 'dosya')
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
-                    label="📥 PDF Etiketler İndir",
-                    data=st.session_state['pdf_ready'],
-                    file_name=f"etiketler_{ts}.pdf",
-                    mime="application/pdf",
-                    key="dl_pdf"
-                )
-                st.download_button(
-                    label="📥 Üretim Listesi İndir",
-                    data=st.session_state['uretim_ready'],
-                    file_name=f"uretim_{ts}.txt",
-                    mime="text/plain",
-                    key="dl_uretim"
-                )
-            with col2:
-                st.download_button(
-                    label="📥 Kişiselleştirme Listesi İndir",
-                    data=st.session_state['kisisel_ready'],
-                    file_name=f"kisisellestime_{ts}.txt",
-                    mime="text/plain",
-                    key="dl_kisisel"
-                )
-                st.download_button(
-                    label="📥 Kontrol Listesi İndir",
-                    data=st.session_state['kontrol_ready'],
-                    file_name=f"kontrol_{ts}.txt",
-                    mime="text/plain",
-                    key="dl_kontrol"
-                )
+
+            import base64
+
+            def make_link(data, filename, mime, label):
+                b64 = base64.b64encode(data).decode()
+                return f'<a href="data:{mime};base64,{b64}" download="{filename}" style="display:inline-block;padding:8px 16px;background:#667eea;color:white;border-radius:6px;text-decoration:none;font-weight:bold;margin:4px;">{label}</a>'
+
+            links_html = make_link(st.session_state['pdf_ready'], f"etiketler_{ts}.pdf", "application/pdf", "📥 PDF Etiketler")
+            links_html += make_link(st.session_state['uretim_ready'], f"uretim_{ts}.txt", "text/plain", "📥 Üretim Listesi")
+            links_html += make_link(st.session_state['kisisel_ready'], f"kisisellestime_{ts}.txt", "text/plain", "📥 Kişiselleştirme Listesi")
+            links_html += make_link(st.session_state['kontrol_ready'], f"kontrol_{ts}.txt", "text/plain", "📥 Kontrol Listesi")
+
+            st.markdown(links_html, unsafe_allow_html=True)
+
             st.markdown("---")
             if st.button("🔄 Yeni Dosya Yükle", type="secondary"):
                 for k in ['files_created', 'pdf_ready', 'uretim_ready', 'kisisel_ready', 'kontrol_ready', 'ts', 'last_file_name']:
