@@ -49,13 +49,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-title">🏭 Sipariş Takip Sistemi Sistemi</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">🏭 Sipariş Takip Sistemi</h1>', unsafe_allow_html=True)
 
 
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1xD6d_drnDc9YYnzvT4XGXpuBTtAHB7x2p6Eai1bKlps/edit"
-SHEET_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Model", "Ölçü", 
-              "Durum", "Not", "Tamamlanma Saati", "Ekleyen"]
+SHEET_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Model", "Ölçü",
+              "Durum", "Not", "Güncelleme Saati", "Ekleyen"]
 
 @st.cache_resource
 def get_gsheet():
@@ -66,7 +66,7 @@ def get_gsheet():
         client = gspread.authorize(creds)
         sheet = client.open_by_url(SHEET_URL).sheet1
         return sheet
-    except Exception as e:
+    except:
         return None
 
 def load_sheet_data():
@@ -81,38 +81,95 @@ def load_sheet_data():
     except:
         return pd.DataFrame(columns=SHEET_COLS)
 
-def sync_orders_to_sheet(orders_df):
-    """Yeni siparişleri sheet'e ekle, mevcutları güncelleme"""
+def load_orders_to_session(orders_df):
+    """
+    Yeni sipariş dosyası yüklenince:
+    - Sorunlu (Not dolu) olanlar sheet'te kalır
+    - Sorunsuz (Not boş) eski siparişler silinir
+    - Yeni siparişler eklenir (sheet'te olmayanlar)
+    """
     sheet = get_gsheet()
     if sheet is None:
         return False
     try:
         existing = load_sheet_data()
-        existing_nos = set(str(x) for x in existing.get("Sipariş No", pd.Series()).tolist())
         istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
-        new_rows = []
-        for _, row in orders_df.iterrows():
-            siparis_no = str(row["Sipariş No"])
-            if siparis_no not in existing_nos:
-                new_rows.append([
-                    siparis_no,
-                    str(row.get("Müşteri", "")),
-                    str(row.get("Mağaza", "")),
-                    str(row.get("Genişlik", "")),
-                    str(row.get("Model", "")),
-                    str(row.get("Ölçü", "")),
-                    "⏳ Bekliyor",
-                    "",
-                    "",
-                    ""
+
+        # Sorunsuz eski siparişleri bul (Not boş olanlar)
+        yeni_siparis_nolar = set(str(r["Sipariş No"]) for _, r in orders_df.iterrows())
+
+        if not existing.empty:
+            # Sheet'i yeniden oluştur: sorunluları tut + yeni siparişleri ekle
+            sorunlular = existing[
+                existing["Not"].notna() & (existing["Not"].astype(str).str.strip() != "")
+            ].copy()
+
+            # Yeni sipariş satırları (sheet'te hiç yoksa)
+            sorunlu_nos = set(str(x) for x in sorunlular["Sipariş No"].tolist())
+            new_rows = []
+            for _, row in orders_df.iterrows():
+                siparis_no = str(row["Sipariş No"])
+                key = siparis_no + "_" + str(row.get("Genişlik", ""))
+                # Sorunlular arasında değilse ve henüz eklenmemişse ekle
+                already = any(
+                    str(r.get("Sipariş No","")) == siparis_no and
+                    str(r.get("Genişlik","")) == str(row.get("Genişlik",""))
+                    for _, r in sorunlular.iterrows()
+                )
+                if not already:
+                    new_rows.append([
+                        siparis_no, str(row.get("Müşteri","")), str(row.get("Mağaza","")),
+                        str(row.get("Genişlik","")), str(row.get("Model","")), str(row.get("Ölçü","")),
+                        "", "", "", ""
+                    ])
+
+            # Sheet'i tamamen yenile
+            sheet.clear()
+            sheet.append_row(SHEET_COLS)
+            all_rows = sorunlular.values.tolist() + new_rows
+            if all_rows:
+                sheet.append_rows(all_rows)
+            return len(new_rows)
+        else:
+            # Sheet boşsa direkt ekle
+            sheet.append_row(SHEET_COLS)
+            rows = []
+            for _, row in orders_df.iterrows():
+                rows.append([
+                    str(row["Sipariş No"]), str(row.get("Müşteri","")), str(row.get("Mağaza","")),
+                    str(row.get("Genişlik","")), str(row.get("Model","")), str(row.get("Ölçü","")),
+                    "", "", "", ""
                 ])
-        if new_rows:
-            # Header yoksa ekle
-            if sheet.row_count == 0 or sheet.cell(1, 1).value != "Sipariş No":
-                sheet.insert_row(SHEET_COLS, 1)
-            sheet.append_rows(new_rows)
-        return len(new_rows)
+            if rows:
+                sheet.append_rows(rows)
+            return len(rows)
     except Exception as e:
+        st.error(f"Sheet hatası: {e}")
+        return False
+
+def mark_as_problematic(siparis_no, musteri, magaza, genislik, model, olcu, not_text, durum, kullanici):
+    """Bir siparişi sorunlu olarak işaretle (notu güncelle)"""
+    sheet = get_gsheet()
+    if sheet is None:
+        return False
+    try:
+        istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
+        # Sipariş sheet'te var mı?
+        try:
+            cell = sheet.find(str(siparis_no))
+            row_num = cell.row
+            sheet.update_cell(row_num, 7, durum)
+            sheet.update_cell(row_num, 8, not_text)
+            sheet.update_cell(row_num, 9, istanbul_now)
+            sheet.update_cell(row_num, 10, kullanici)
+        except:
+            # Yoksa yeni satır ekle (manuel giriş)
+            sheet.append_row([
+                siparis_no, musteri, magaza, genislik, model, olcu,
+                durum, not_text, istanbul_now, kullanici
+            ])
+        return True
+    except:
         return False
 
 def update_order_status(siparis_no, durum, not_text, kullanici):
@@ -120,9 +177,9 @@ def update_order_status(siparis_no, durum, not_text, kullanici):
     if sheet is None:
         return False
     try:
+        istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
         cell = sheet.find(str(siparis_no))
         if cell:
-            istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M") if durum == "✅ Tamamlandı" else ""
             sheet.update_cell(cell.row, 7, durum)
             sheet.update_cell(cell.row, 8, not_text)
             sheet.update_cell(cell.row, 9, istanbul_now)
@@ -595,57 +652,108 @@ def create_kontrol_listesi(orders_df, store_name=''):
 tab1, tab2 = st.tabs(["📦 Sipariş Yükle & Dosyalar", "📊 Sipariş Durumu Takibi"])
 
 with tab2:
-    st.markdown("### 📊 Sipariş Durumu Takibi")
+    st.markdown("### 🚨 Sorunlu Sipariş Takibi")
 
-    kullanici = st.text_input("👤 Adınız", placeholder="Adınızı girin...", key="kullanici")
-
-    col_refresh, col_filter = st.columns([1, 3])
-    with col_refresh:
+    col_r, _ = st.columns([1, 5])
+    with col_r:
         if st.button("🔄 Yenile", key="refresh_sheet"):
-            st.cache_resource.clear()
+            get_gsheet.clear()
 
     sheet_df = load_sheet_data()
 
-    if sheet_df.empty:
-        st.info("Henüz sipariş yüklenmemiş. Önce 'Sipariş Yükle' sekmesinden dosya yükleyin.")
+    # Filtre — sadece sorunlular veya tümü
+    col_f1, col_f2 = st.columns([2, 3])
+    with col_f1:
+        goster_filtre = st.selectbox("Göster", ["Sadece Sorunlular", "Tüm Siparişler"], key="goster_filtre")
+    with col_f2:
+        durum_filtre = st.selectbox("Durum Filtresi", ["Tümü", "⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="durum_filtre")
+
+    if not sheet_df.empty:
+        goster_df = sheet_df.copy()
+        if goster_filtre == "Sadece Sorunlular":
+            goster_df = goster_df[goster_df["Not"].notna() & (goster_df["Not"].astype(str).str.strip() != "")]
+        if durum_filtre != "Tümü":
+            goster_df = goster_df[goster_df["Durum"] == durum_filtre]
+        st.markdown(f"**{len(goster_df)} kayıt**")
     else:
-        with col_filter:
-            filtre = st.selectbox("Filtre", ["Tümü", "⏳ Bekliyor", "✅ Tamamlandı"], key="durum_filtre")
+        goster_df = pd.DataFrame(columns=SHEET_COLS)
+        st.info("Henüz sipariş yüklenmemiş.")
 
-        goster_df = sheet_df if filtre == "Tümü" else sheet_df[sheet_df["Durum"] == filtre]
+    # Mevcut siparişleri listele
+    for idx, row in goster_df.iterrows():
+        siparis_no = str(row.get("Sipariş No", ""))
+        musteri = str(row.get("Müşteri", ""))
+        durum = str(row.get("Durum", ""))
+        not_text = str(row.get("Not", ""))
+        ekleyen = str(row.get("Ekleyen", ""))
+        guncelleme = str(row.get("Güncelleme Saati", ""))
+        genislik = str(row.get("Genişlik", ""))
+        model = str(row.get("Model", ""))
+        olcu = str(row.get("Ölçü", ""))
 
-        st.markdown(f"**{len(goster_df)} sipariş gösteriliyor**")
+        has_problem = not_text.strip() not in ["", "nan"]
+        icon = "🚨" if has_problem else "📦"
+        durum_icon = "✅" if durum == "✅ Çözüldü" else ("🔄" if durum == "🔄 İşlemde" else ("⏳" if durum == "⏳ Bekliyor" else ""))
 
-        for idx, row in goster_df.iterrows():
-            siparis_no = str(row.get("Sipariş No", ""))
-            musteri = str(row.get("Müşteri", ""))
-            durum = str(row.get("Durum", "⏳ Bekliyor"))
-            not_text = str(row.get("Not", ""))
-            tamamlanma = str(row.get("Tamamlanma Saati", ""))
+        label = f"{icon} #{siparis_no} — {musteri} | {genislik} {model} {olcu}"
+        if has_problem:
+            label += f" | {durum_icon} {durum}"
 
-            renk = "#e8f5e9" if durum == "✅ Tamamlandı" else "#fff8e1"
-            border = "#4caf50" if durum == "✅ Tamamlandı" else "#ff9800"
+        with st.expander(label):
+            if has_problem:
+                st.caption(f"Ekleyen: {ekleyen} | {guncelleme}")
 
-            with st.expander(f"{durum}  |  #{siparis_no}  —  {musteri}  |  {row.get('Genişlik','')} {row.get('Model','')} {row.get('Ölçü','')}"):
-                col_a, col_b = st.columns([2, 1])
-                with col_a:
-                    yeni_not = st.text_area("Not", value=not_text if not_text != "nan" else "", key=f"not_{siparis_no}_{idx}")
-                with col_b:
-                    yeni_durum = st.selectbox("Durum", ["⏳ Bekliyor", "✅ Tamamlandı"],
-                        index=1 if durum == "✅ Tamamlandı" else 0, key=f"durum_{siparis_no}_{idx}")
-                    if tamamlanma and tamamlanma != "nan":
-                        st.caption(f"Tamamlandı: {tamamlanma}")
-                    if st.button("💾 Kaydet", key=f"save_{siparis_no}_{idx}"):
-                        if not kullanici:
-                            st.warning("Lütfen adınızı girin.")
+            col_a, col_b = st.columns([2, 1])
+            with col_a:
+                yeni_not = st.text_area("Sorun Notu", value=not_text if not_text != "nan" else "",
+                    placeholder="Sorunu buraya yazın...", key=f"not_{siparis_no}_{idx}")
+            with col_b:
+                yeni_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"],
+                    index=["⏳ Bekliyor","🔄 İşlemde","✅ Çözüldü"].index(durum)
+                    if durum in ["⏳ Bekliyor","🔄 İşlemde","✅ Çözüldü"] else 0,
+                    key=f"durum_{siparis_no}_{idx}")
+                kullanici_s = st.text_input("Adınız", key=f"kul_{siparis_no}_{idx}")
+                if st.button("💾 Kaydet", key=f"save_{siparis_no}_{idx}", type="primary"):
+                    if not kullanici_s:
+                        st.warning("Adınızı girin.")
+                    elif not yeni_not.strip():
+                        st.warning("Sorun notu gerekli.")
+                    else:
+                        ok = mark_as_problematic(
+                            siparis_no, musteri, str(row.get("Mağaza","")),
+                            genislik, model, olcu, yeni_not, yeni_durum, kullanici_s
+                        )
+                        if ok:
+                            st.success("Kaydedildi!")
+                            get_gsheet.clear()
+                            st.rerun()
                         else:
-                            ok = update_order_status(siparis_no, yeni_durum, yeni_not, kullanici)
-                            if ok:
-                                st.success("Kaydedildi!")
-                                st.cache_resource.clear()
-                                st.rerun()
-                            else:
-                                st.error("Kayıt başarısız.")
+                            st.error("Kayıt başarısız.")
+
+    st.markdown("---")
+    # Manuel sipariş ekleme
+    with st.expander("➕ Manuel Sipariş No ile Ekle"):
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            m_siparis_no = st.text_input("Sipariş No *", key="m_sipno")
+            m_musteri = st.text_input("Müşteri Adı", key="m_musteri")
+            m_genislik = st.text_input("Genişlik", key="m_genislik")
+        with col_m2:
+            m_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="m_durum")
+            m_not = st.text_area("Sorun Notu *", key="m_not", height=100)
+            m_kullanici = st.text_input("Adınız *", key="m_kullanici")
+        if st.button("➕ Ekle", key="m_ekle", type="primary"):
+            if not m_siparis_no or not m_not or not m_kullanici:
+                st.warning("Sipariş No, Sorun Notu ve Adınız zorunlu.")
+            else:
+                ok = mark_as_problematic(m_siparis_no, m_musteri, "", m_genislik, "", "", m_not, m_durum, m_kullanici)
+                if ok:
+                    st.success(f"#{m_siparis_no} eklendi!")
+                    get_gsheet.clear()
+                    st.rerun()
+                else:
+                    st.error("Eklenemedi.")
+
 
 with tab1:
     col_main, col_info = st.columns([3, 1])
@@ -698,15 +806,14 @@ if uploaded_file:
 
             st.success(f"✅ {len(orders_df)} sipariş işlendi!")
 
-            # Google Sheets'e sync et
-            with st.spinner("Siparişler takip listesine ekleniyor..."):
-                yeni_sayi = sync_orders_to_sheet(orders_df)
-                if yeni_sayi is False:
-                    st.warning("⚠️ Google Sheets bağlantısı kurulamadı. Takip özelliği devre dışı.")
-                elif yeni_sayi > 0:
-                    st.success(f"✅ {yeni_sayi} yeni sipariş takip listesine eklendi!")
+            with st.spinner("Sipariş listesi güncelleniyor..."):
+                sonuc = load_orders_to_session(orders_df)
+                if sonuc is False:
+                    st.warning("⚠️ Google Sheets bağlantısı kurulamadı.")
                 else:
-                    st.info("ℹ️ Tüm siparişler zaten takip listesinde.")
+                    st.success(f"✅ {sonuc} yeni sipariş takip listesine eklendi, sorunlular korundu.")
+
+
 
             with st.expander("📋 İşlenmiş Siparişler"):
                 st.dataframe(orders_df)
@@ -830,7 +937,7 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666;">
-    <b>🏭 Sipariş Takip Sistemi Sistemi v1.3</b><br>
+    <b>🏭 Sipariş Takip Sistemi v1.3</b><br>
     CSV + XLSX → PDF Etiket + Lazer Etiketi + Üretim + Kişiselleştirme + Kontrol PDF
 </div>
 """, unsafe_allow_html=True)
