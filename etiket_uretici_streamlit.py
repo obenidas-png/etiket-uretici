@@ -689,7 +689,7 @@ with tab2:
         if st.button("🔄 Yenile", key="refresh_sheet"):
             get_gsheet.clear()
 
-st.markdown("---")
+    st.markdown("---")
     # Manuel sipariş ekleme
     with st.expander("➕ Manuel Sipariş No ile Ekle"):
         col_m1, col_m2 = st.columns(2)
@@ -719,7 +719,7 @@ st.markdown("---")
 
     st.markdown("---")
 
-        sheet_df = load_sheet_data()
+    sheet_df = load_sheet_data()
 
     # Filtre — sadece sorunlular veya tümü
     col_f1, col_f2, col_f3 = st.columns(3)
