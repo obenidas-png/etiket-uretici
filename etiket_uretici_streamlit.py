@@ -483,23 +483,9 @@ def create_kontrol_listesi(orders_df, store_name=''):
 
 
 # ── Ana uygulama ──────────────────────────────
-st.markdown("""
-<div style="max-width: 700px; margin: 0 auto 30px auto;">
-""", unsafe_allow_html=True)
+col_main, col_info = st.columns([3, 1])
 
-col_l, col_mid, col_r = st.columns([1, 3, 1])
-with col_mid:
-    st.markdown("### 📂 Sipariş Dosyası Yükle")
-    uploaded_file = st.file_uploader(
-        "📦 Dosyayı buraya sürükleyin veya tıklayın",
-        type=['csv', 'xlsx', 'xlsm'],
-        help="ShipEntegra: Siparişler > İndir (Excel) seçilerek indirilen dosyayı yükleyin"
-    )
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-col1, col2 = st.columns([3, 1])
-with col2:
+with col_info:
     st.markdown("### ℹ️ Bilgi")
     st.info("""
     **Dosya nasıl alınır?**
@@ -520,8 +506,16 @@ with col2:
     - 📄 Kontrol Listesi (PDF)
     """)
 
+with col_main:
+    st.markdown("### 📂 Sipariş Dosyası Yükle")
+    uploaded_file = st.file_uploader(
+        "📦 Dosyayı buraya sürükleyin veya tıklayın",
+        type=['csv', 'xlsx', 'xlsm'],
+        help="ShipEntegra: Siparişler > İndir (Excel) seçilerek indirilen dosyayı yükleyin"
+    )
+
 if uploaded_file:
-    with col1:
+    with col_main:
         try:
             if 'last_file_name' not in st.session_state or st.session_state.get('last_file_name') != uploaded_file.name:
                 st.session_state['files_created'] = False
@@ -573,29 +567,40 @@ if uploaded_file:
             else:
                 st.success("✅ Tüm dosyalar hazır!")
                 ts = st.session_state.get('ts', 'dosya')
-                st.markdown("### 📥 Dosyaları İndir")
 
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.download_button("📥 PDF Etiketler", data=st.session_state['pdf_ready'],
+                has_lazer = bool(st.session_state.get('lazer_ready'))
+                num_cols = 4 if has_lazer else 3
+                cols = st.columns(num_cols)
+
+                btn_style = """
+<style>
+[data-testid="stDownloadButton"] button {
+    font-size: 1.35rem !important;
+    padding: 14px 10px !important;
+    height: auto !important;
+}
+[data-testid="stDownloadButton"] button svg,
+[data-testid="stDownloadButton"] button span:first-child {
+    font-size: 1.6rem !important;
+}
+</style>
+"""
+                st.markdown(btn_style, unsafe_allow_html=True)
+
+                with cols[0]:
+                    st.download_button("📄  PDF Etiketler", data=st.session_state['pdf_ready'],
                         file_name=f"etiketler_{ts}.pdf", mime="application/pdf", key="dl_pdf")
-                with c2:
-                    if st.session_state.get('lazer_ready'):
-                        st.download_button("🟠 Lazer Etiketleri", data=st.session_state['lazer_ready'],
+                if has_lazer:
+                    with cols[1]:
+                        st.download_button("🟠  Lazer Etiketleri", data=st.session_state['lazer_ready'],
                             file_name=f"lazer_etiketleri_{ts}.pdf", mime="application/pdf", key="dl_lazer")
-                    else:
-                        st.info("Kişiselleştirme yok")
-                with c3:
-                    st.download_button("📥 Kontrol Listesi", data=st.session_state['kontrol_ready'],
-                        file_name=f"kontrol_{ts}.pdf", mime="application/pdf", key="dl_kontrol")
 
-                c4, c5 = st.columns(2)
-                with c4:
-                    st.download_button("📥 Üretim Listesi", data=st.session_state['uretim_ready'],
+                with cols[-2]:
+                    st.download_button("📝  Üretim & Kişiselleştirme", data=st.session_state['uretim_ready'],
                         file_name=f"uretim_{ts}.txt", mime="text/plain", key="dl_uretim")
-                with c5:
-                    st.download_button("📥 Kişiselleştirme Listesi", data=st.session_state['kisisel_ready'],
-                        file_name=f"kisisellestime_{ts}.txt", mime="text/plain", key="dl_kisisel")
+                with cols[-1]:
+                    st.download_button("📋  Kontrol Listesi", data=st.session_state['kontrol_ready'],
+                        file_name=f"kontrol_{ts}.pdf", mime="application/pdf", key="dl_kontrol")
 
                 st.markdown("---")
                 if st.button("🔄 Yeni Dosya Yükle", type="secondary"):
@@ -608,7 +613,7 @@ if uploaded_file:
             st.info("💡 CSV için gerekli sütunlar: MagazaAdı, Alıcı, SiparişNumarası, ÜrünAdı, Özellikler")
             st.info("💡 XLSX için: ShipEntegra'dan İndir (Excel) ile alınan dosya olmalı")
 else:
-    with col1:
+    with col_main:
         st.info("👆 Lütfen sipariş dosyanızı yükleyin")
 
 st.markdown("---")
