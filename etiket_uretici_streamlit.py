@@ -720,12 +720,15 @@ with tab2:
         # Güncelleme tarihine göre sırala (en eski üste, tarihi olmayanlar sona)
         def parse_tarih(t):
             try:
-                return pd.to_datetime(t, format="%d.%m.%Y %H:%M")
+                return pd.to_datetime(str(t), format="%d.%m.%Y %H:%M")
             except:
                 return pd.Timestamp.max
         goster_df = goster_df.copy()
-        goster_df["_sort"] = goster_df["Güncelleme Saati"].apply(parse_tarih)
-        goster_df = goster_df.sort_values("_sort", ascending=True).drop(columns=["_sort"])
+        tarih_col = "Güncelleme Saati" if "Güncelleme Saati" in goster_df.columns else (
+                    "Tamamlanma Saati" if "Tamamlanma Saati" in goster_df.columns else None)
+        if tarih_col:
+            goster_df["_sort"] = goster_df[tarih_col].apply(parse_tarih)
+            goster_df = goster_df.sort_values("_sort", ascending=True).drop(columns=["_sort"])
         st.markdown(f"**{len(goster_df)} kayıt**")
     else:
         goster_df = pd.DataFrame(columns=SHEET_COLS)
