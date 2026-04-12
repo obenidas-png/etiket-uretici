@@ -491,53 +491,53 @@ if uploaded_file:
                 kontrol_txt = create_kontrol_listesi(orders_df, store_name)
 
                 st.session_state['pdf_ready'] = pdf_buffer.getvalue()
-                st.session_state['uretim_ready'] = uretim_txt
-                st.session_state['kisisel_ready'] = kisisel_txt
-                st.session_state['kontrol_ready'] = kontrol_txt
+                st.session_state['uretim_ready'] = uretim_txt.encode('utf-8')
+                st.session_state['kisisel_ready'] = kisisel_txt.encode('utf-8')
+                st.session_state['kontrol_ready'] = kontrol_txt.encode('utf-8')
                 st.session_state['files_created'] = True
+                st.session_state['ts'] = datetime.now().strftime('%Y%m%d_%H%M%S')
 
             st.success("✅ Tüm dosyalar hazır!")
             st.balloons()
 
         if st.session_state.get('files_created', False):
             st.markdown("### 📥 Dosyaları İndir")
-            st.info("💡 Her birine tıkladığınızda diğerleri kaybolmayacak!")
-
+            ts = st.session_state.get('ts', 'dosya')
             col1, col2 = st.columns(2)
             with col1:
                 st.download_button(
                     label="📥 PDF Etiketler İndir",
                     data=st.session_state['pdf_ready'],
-                    file_name=f"etiketler_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                    file_name=f"etiketler_{ts}.pdf",
                     mime="application/pdf",
-                    key="download_pdf"
+                    key="dl_pdf"
                 )
                 st.download_button(
                     label="📥 Üretim Listesi İndir",
-                    data=st.session_state['uretim_ready'].encode('utf-8'),
-                    file_name=f"uretim_listesi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    data=st.session_state['uretim_ready'],
+                    file_name=f"uretim_{ts}.txt",
                     mime="text/plain",
-                    key="download_uretim"
+                    key="dl_uretim"
                 )
             with col2:
                 st.download_button(
                     label="📥 Kişiselleştirme Listesi İndir",
-                    data=st.session_state['kisisel_ready'].encode('utf-8'),
-                    file_name=f"kisisellestime_listesi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    data=st.session_state['kisisel_ready'],
+                    file_name=f"kisisellestime_{ts}.txt",
                     mime="text/plain",
-                    key="download_kisisel"
+                    key="dl_kisisel"
                 )
                 st.download_button(
                     label="📥 Kontrol Listesi İndir",
-                    data=st.session_state['kontrol_ready'].encode('utf-8'),
-                    file_name=f"kontrol_listesi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    data=st.session_state['kontrol_ready'],
+                    file_name=f"kontrol_{ts}.txt",
                     mime="text/plain",
-                    key="download_kontrol"
+                    key="dl_kontrol"
                 )
-
             st.markdown("---")
             if st.button("🔄 Yeni Dosya Yükle", type="secondary"):
-                st.session_state['files_created'] = False
+                for k in ['files_created', 'pdf_ready', 'uretim_ready', 'kisisel_ready', 'kontrol_ready', 'ts', 'last_file_name']:
+                    st.session_state.pop(k, None)
                 st.rerun()
 
     except Exception as e:
