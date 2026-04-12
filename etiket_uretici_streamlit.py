@@ -13,7 +13,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.colors import black, HexColor
 import re
 
-st.set_page_config(page_title="Etsy Atölye Yönetim", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="Sipariş Takip Sistemi", page_icon="🏭", layout="wide")
 
 st.markdown("""
 <style>
@@ -45,7 +45,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-title">🏭 Etsy Atölye Yönetim Sistemi</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">🏭 Sipariş Takip Sistemi Sistemi</h1>', unsafe_allow_html=True)
 
 
 def xlsx_to_standard_df(df_xlsx):
@@ -289,10 +289,10 @@ def create_lazer_labels(orders_df):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
-    label_width, label_height = 5 * cm, 3 * cm
-    margin_x, margin_y = 0.2 * cm, 0.2 * cm
-    gap_x, gap_y = 0.15 * cm, 0.15 * cm
-    labels_per_row, labels_per_column = 4, 9
+    label_width, label_height = 9.5 * cm, 4.5 * cm
+    margin_x, margin_y = 0.5 * cm, 0.5 * cm
+    gap_x, gap_y = 0.3 * cm, 0.3 * cm
+    labels_per_row, labels_per_column = 2, 6
     labels_per_page = labels_per_row * labels_per_column
     label_count = 0
 
@@ -317,43 +317,56 @@ def draw_lazer_label(c, x, y, width, height, data):
     c.setLineWidth(1.5)
     c.rect(x, y, width, height)
 
-    font_size = 7
-    line_height = height / 5
-
-    for i in range(1, 5):
-        c.setStrokeColor(HexColor('#ffcc88'))
-        c.setLineWidth(0.3)
-        c.line(x, y + (i * line_height), x + width, y + (i * line_height))
+    font_size = 8
+    label_col_w = 2.0 * cm
+    text_x = x + 0.2 * cm
 
     pers = str(data.get('Kişiselleştirme', ''))
     pers = pers.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
+    pers_ascii = turkce_to_ascii(pers)
 
-    # Lazer metnini max 2 satıra böl
-    pers_line1 = pers[:35]
-    pers_line2 = pers[35:70] if len(pers) > 35 else ''
+    # Başlık
+    c.setFillColor(HexColor('#cc6600'))
+    c.setFont("Helvetica-Bold", font_size + 1)
+    c.drawString(text_x, y + height - 0.5 * cm, "LAZER ETIKETI")
+    c.setFillColor(black)
 
-    rows = [
-        ('LAZER ETİKETİ', ''),
-        ('Musteri', turkce_to_ascii(str(data.get('Müşteri', ''))[:25])),
-        ('Genislik', str(data.get('Genişlik', ''))),
-        ('Lazer 1', turkce_to_ascii(pers_line1)),
-        ('Lazer 2', turkce_to_ascii(pers_line2)),
-    ]
+    # Ayırıcı çizgi
+    c.setStrokeColor(HexColor('#ff8c00'))
+    c.setLineWidth(0.8)
+    c.line(x, y + height - 0.7 * cm, x + width, y + height - 0.7 * cm)
 
-    text_x = x + 0.1 * cm
-    for i, (label, value) in enumerate(rows):
-        row_y = y + height - ((i + 0.65) * line_height)
-        if i == 0:
-            c.setFont("Helvetica-Bold", font_size)
-            c.setFillColor(HexColor('#cc6600'))
-            c.drawString(text_x, row_y, label)
-            c.setFillColor(black)
-        else:
-            c.setFont("Helvetica-Bold", font_size)
-            c.drawString(text_x, row_y, label)
-            c.setFont("Helvetica", font_size - 1)
-            try: c.drawString(x + 1.7 * cm, row_y, str(value))
-            except: c.drawString(x + 1.7 * cm, row_y, turkce_to_ascii(str(value)))
+    # Müşteri
+    row_y = y + height - 1.1 * cm
+    c.setFont("Helvetica-Bold", font_size)
+    c.drawString(text_x, row_y, "Musteri:")
+    c.setFont("Helvetica", font_size)
+    c.drawString(text_x + label_col_w, row_y, turkce_to_ascii(str(data.get('Müşteri', ''))[:35]))
+
+    # Genişlik
+    row_y -= 0.6 * cm
+    c.setFont("Helvetica-Bold", font_size)
+    c.drawString(text_x, row_y, "Genislik:")
+    c.setFont("Helvetica", font_size)
+    c.drawString(text_x + label_col_w, row_y, str(data.get('Genişlik', '')))
+
+    # Kişiselleştirme — satırlara böl
+    row_y -= 0.6 * cm
+    c.setFont("Helvetica-Bold", font_size)
+    c.drawString(text_x, row_y, "Lazer:")
+
+    # Her satırda yaklaşık kaç karakter sığar
+    chars_per_line = int((width - label_col_w - 0.4 * cm) / (font_size * 0.52))
+    c.setFont("Helvetica", font_size)
+    line_start = 0
+    max_lines = 4
+    for line_i in range(max_lines):
+        chunk = pers_ascii[line_start:line_start + chars_per_line]
+        if not chunk:
+            break
+        lx = text_x + label_col_w if line_i == 0 else text_x + 0.3 * cm
+        c.drawString(lx, row_y - (line_i * 0.52 * cm), chunk)
+        line_start += chars_per_line
 
 
 def create_uretim_listesi(orders_df):
@@ -601,7 +614,7 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666;">
-    <b>🏭 Etsy Atölye Yönetim Sistemi v1.3</b><br>
+    <b>🏭 Sipariş Takip Sistemi Sistemi v1.3</b><br>
     CSV + XLSX → PDF Etiket + Lazer Etiketi + Üretim + Kişiselleştirme + Kontrol PDF
 </div>
 """, unsafe_allow_html=True)
