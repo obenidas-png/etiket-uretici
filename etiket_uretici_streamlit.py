@@ -13,6 +13,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.colors import black, HexColor
 import re
 from zoneinfo import ZoneInfo
+import zipfile
 
 st.set_page_config(page_title="Sipariş Takip Sistemi", page_icon="🏭", layout="wide")
 
@@ -596,8 +597,41 @@ if uploaded_file:
                 ts = st.session_state.get('ts', 'dosya')
 
                 has_lazer = bool(st.session_state.get('lazer_ready'))
-                num_cols = 4 if has_lazer else 3
+                num_cols = 5 if has_lazer else 4
                 cols = st.columns(num_cols)
+
+                # ZIP butonu
+                istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d%m%Y_%H%M")
+                store_name_zip = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else 'siparis'
+                zip_filename = f"{store_name_zip}_{istanbul_now}.zip"
+
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    zf.writestr(f"kargo_etiketleri_{ts}.pdf", st.session_state['pdf_ready'])
+                    if st.session_state.get('lazer_ready'):
+                        zf.writestr(f"lazer_etiketleri_{ts}.pdf", st.session_state['lazer_ready'])
+                    zf.writestr(f"fsm_uretim_{ts}.txt", st.session_state['uretim_ready'])
+                    zf.writestr(f"kisisellestime_{ts}.txt", st.session_state['kisisel_ready'])
+                    zf.writestr(f"kontrol_{ts}.pdf", st.session_state['kontrol_ready'])
+                zip_buffer.seek(0)
+
+                st.markdown("""
+<style>
+div[data-testid="stDownloadButton"]:first-of-type button {
+    font-size: 1.2rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
+                st.download_button(
+                    "📦  TÜM DOSYALARI İNDİR (.zip)",
+                    data=zip_buffer.getvalue(),
+                    file_name=zip_filename,
+                    mime="application/zip",
+                    key="dl_zip",
+                    type="primary",
+                    use_container_width=True
+                )
+                st.markdown("---")
 
                 btn_style = """
 <style>
@@ -615,16 +649,19 @@ if uploaded_file:
                 st.markdown(btn_style, unsafe_allow_html=True)
 
                 with cols[0]:
-                    st.download_button("📄  PDF Etiketler", data=st.session_state['pdf_ready'],
-                        file_name=f"etiketler_{ts}.pdf", mime="application/pdf", key="dl_pdf")
+                    st.download_button("📦  Kargo Etiketleri", data=st.session_state['pdf_ready'],
+                        file_name=f"kargo_etiketleri_{ts}.pdf", mime="application/pdf", key="dl_pdf")
                 if has_lazer:
                     with cols[1]:
                         st.download_button("🟠  Lazer Etiketleri", data=st.session_state['lazer_ready'],
                             file_name=f"lazer_etiketleri_{ts}.pdf", mime="application/pdf", key="dl_lazer")
 
+                with cols[-3]:
+                    st.download_button("📝  FSM Üretim Listesi", data=st.session_state['uretim_ready'],
+                        file_name=f"fsm_uretim_{ts}.txt", mime="text/plain", key="dl_uretim")
                 with cols[-2]:
-                    st.download_button("📝  Üretim & Kişiselleştirme", data=st.session_state['uretim_ready'],
-                        file_name=f"uretim_{ts}.txt", mime="text/plain", key="dl_uretim")
+                    st.download_button("✍️  Kişiselleştirme Listesi", data=st.session_state['kisisel_ready'],
+                        file_name=f"kisisellestime_{ts}.txt", mime="text/plain", key="dl_kisisel")
                 with cols[-1]:
                     st.download_button("📋  Kontrol Listesi", data=st.session_state['kontrol_ready'],
                         file_name=f"kontrol_{ts}.pdf", mime="application/pdf", key="dl_kontrol")
