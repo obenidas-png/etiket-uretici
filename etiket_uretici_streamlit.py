@@ -7,51 +7,31 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
-from reportlab.lib.colors import black
+from reportlab.lib.colors import black, HexColor
 import re
 
-st.set_page_config(
-    page_title="Etsy Atölye Yönetim",
-    page_icon="🏭",
-    layout="wide"
-)
+st.set_page_config(page_title="Etsy Atölye Yönetim", page_icon="🏭", layout="wide")
 
 st.markdown("""
 <style>
     .main-title {
-        text-align: center;
-        padding: 20px;
+        text-align: center; padding: 20px;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 10px;
-        color: white;
-        margin-bottom: 30px;
+        border-radius: 10px; color: white; margin-bottom: 30px;
     }
-    .stButton>button {
-        width: 100%;
-        background-color: #667eea;
-        color: white;
-        font-weight: bold;
-    }
+    .stButton>button { width: 100%; background-color: #667eea; color: white; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<h1 class="main-title">🏭 Etsy Atölye Yönetim Sistemi</h1>', unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────
-# XLSX → ortak DataFrame dönüştürücü
-# ─────────────────────────────────────────────
 def xlsx_to_standard_df(df_xlsx):
-    """
-    XLSX sütunlarını parse_csv'nin beklediği CSV sütun adlarına dönüştürür.
-    Options Name/Value 1-2-3 → Özellikler sütununa çevrilir.
-    """
     rows = []
     for _, row in df_xlsx.iterrows():
-        # Options'ları Özellikler formatına çevir (Ad:X, Değer:Y, ...)
         ozellikler_parts = []
         for i in range(1, 4):
             name = row.get(f'Options Name {i}')
@@ -59,17 +39,13 @@ def xlsx_to_standard_df(df_xlsx):
             if pd.notna(name) and pd.notna(value):
                 ozellikler_parts.append(f"Ad:{name}, Değer:{value}")
         ozellikler = ", ".join(ozellikler_parts)
-
-        # Notes - From Buyer varsa Kişiselleştirme olarak kullan
         buyer_note = str(row.get('Notes - From Buyer', '') or '')
-
         rows.append({
             'MagazaAdı':       row.get('Market - Store Name', ''),
             'SiparişNumarası': row.get('Order - Number', ''),
             'Alıcı':           row.get('Ship To - Name', ''),
             'ÜrünAdı':         row.get('Item - Name', ''),
             'Özellikler':      ozellikler if ozellikler else None,
-            # Ek XLSX alanları (parse_csv'de props üzerinden erişilir)
             '_BuyerNote':      buyer_note,
             '_GiftMessage':    str(row.get('Gift - Message', '') or ''),
             '_ShipBy':         str(row.get('Date - Ship By Date', '') or ''),
@@ -79,7 +55,6 @@ def xlsx_to_standard_df(df_xlsx):
 
 
 def load_file(uploaded_file):
-    """Yüklenen dosyayı (CSV veya XLSX) standart DataFrame'e çevirir."""
     name = uploaded_file.name.lower()
     if name.endswith('.xlsx') or name.endswith('.xlsm'):
         df_raw = pd.read_excel(uploaded_file, engine='openpyxl')
@@ -88,33 +63,24 @@ def load_file(uploaded_file):
         return pd.read_csv(uploaded_file), 'csv'
 
 
-# ─────────────────────────────────────────────
-# Mevcut fonksiyonlar (değiştirilmedi)
-# ─────────────────────────────────────────────
 def parse_csv(df):
     orders = []
 
     def get_store_code(store_name):
         store_lower = str(store_name).lower()
-        if 'foria' in store_lower:
-            return 'FRY'
-        elif 'chepniq' in store_lower:
-            return 'CPQ'
-        elif 'cerasus' in store_lower:
-            return 'CRSS'
-        else:
-            return store_name[:4].upper()
+        if 'foria' in store_lower: return 'FRY'
+        elif 'chepniq' in store_lower: return 'CPQ'
+        elif 'cerasus' in store_lower: return 'CRSS'
+        else: return store_name[:4].upper()
 
     for idx, row in df.iterrows():
         store_name = str(row.get('MagazaAdı', ''))
         store_code = get_store_code(store_name)
-
         product = str(row.get('ÜrünAdı', ''))
         product_lower = product.lower()
 
         if any(keyword in product_lower for keyword in [
-            'price adjustment', 'shipping fee', 'shipping cost',
-            'additional fee', 'extra charge'
+            'price adjustment', 'shipping fee', 'shipping cost', 'additional fee', 'extra charge'
         ]):
             continue
 
@@ -127,7 +93,6 @@ def parse_csv(df):
                     value = parts[i + 1].replace('Değer:', '').strip()
                     props[key] = value
 
-        # XLSX'ten gelen ek alanları props'a ekle
         if row.get('_BuyerNote'):
             props.setdefault('Personalization', row['_BuyerNote'])
 
@@ -135,131 +100,65 @@ def parse_csv(df):
             product_clean = product.split(' - ')[0]
             if len(product_clean) > 40:
                 product_clean = product_clean[:37] + "..."
-
             color = props.get('Metal', '')
             if not color:
-                if '14k yellow gold' in product_lower or 'yellow gold' in product_lower:
-                    color = '14K Yellow Gold'
-                elif '14k white gold' in product_lower or 'white gold' in product_lower:
-                    color = '14K White Gold'
-                elif '14k rose gold' in product_lower or 'rose gold' in product_lower:
-                    color = '14K Rose Gold'
-                elif 'sterling silver' in product_lower or 'silver' in product_lower:
-                    color = 'Sterling Silver'
-
-            orders.append({
-                'Mağaza': store_code,
-                'Sipariş No': row.get('SiparişNumarası', ''),
-                'Müşteri': row.get('Alıcı', ''),
-                'Genişlik': '',
-                'Renk': color,
-                'Model': '',
-                'Ölçü': '',
-                'Kişiselleştirme': props.get('Personalization', ''),
-                'Ürün': product_clean
-            })
+                if '14k yellow gold' in product_lower or 'yellow gold' in product_lower: color = '14K Yellow Gold'
+                elif '14k white gold' in product_lower or 'white gold' in product_lower: color = '14K White Gold'
+                elif '14k rose gold' in product_lower or 'rose gold' in product_lower: color = '14K Rose Gold'
+                elif 'sterling silver' in product_lower or 'silver' in product_lower: color = 'Sterling Silver'
+            orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
+                'Müşteri': row.get('Alıcı', ''), 'Genişlik': '', 'Renk': color, 'Model': '',
+                'Ölçü': '', 'Kişiselleştirme': props.get('Personalization', ''), 'Ürün': product_clean})
         else:
             model = ''
             color = ''
             width = props.get('Width', props.get('Band Width', ''))
-
-            if 'white gold' in product_lower or 'beyaz' in product_lower:
-                color = 'BEYAZ'
-            elif 'yellow gold' in product_lower or 'sarı' in product_lower or 'gold filled' in product_lower:
-                color = 'SARI'
-
-            if 'resizing' in product_lower or 'size adjustment' in product_lower or 'replacement' in product_lower:
-                model = 'YENİLEME'
-            elif 'bevel' in product_lower:
-                model = 'ÇATI MAT' if ('matte' in product_lower or 'mat' in product_lower) else 'ÇATI'
-            elif 'dome' in product_lower:
-                model = 'BOMBE'
-            elif 'flat' in product_lower:
-                model = 'DÜZ'
-            elif 'oval' in product_lower or 'solitaire' in product_lower:
-                model = 'OVAL TEKTAŞ'
-
+            if 'white gold' in product_lower or 'beyaz' in product_lower: color = 'BEYAZ'
+            elif 'yellow gold' in product_lower or 'sarı' in product_lower or 'gold filled' in product_lower: color = 'SARI'
+            if 'resizing' in product_lower or 'size adjustment' in product_lower or 'replacement' in product_lower: model = 'YENİLEME'
+            elif 'bevel' in product_lower: model = 'ÇATI MAT' if ('matte' in product_lower or 'mat' in product_lower) else 'ÇATI'
+            elif 'dome' in product_lower: model = 'BOMBE'
+            elif 'flat' in product_lower: model = 'DÜZ'
+            elif 'oval' in product_lower or 'solitaire' in product_lower: model = 'OVAL TEKTAŞ'
             if not width:
                 width_match = re.search(r'(\d+)\s*mm', product_lower)
-                if width_match:
-                    width = width_match.group(1) + 'MM'
+                if width_match: width = width_match.group(1) + 'MM'
             else:
                 width = str(width).strip()
-                if 'mm' not in width.lower():
-                    width = width.upper() + 'MM'
-                else:
-                    width = width.upper()
-
+                width = width.upper() if 'mm' in width.lower() else width.upper() + 'MM'
             ring_size = props.get('Ring size', props.get('Size for You', ''))
-
             if 'set of 2' in product_lower or 'Size for Your Partner' in props:
                 size1 = props.get('Size for You', '')
                 size2 = props.get('Size for Your Partner', '')
-
-                width1 = '2MM'
-                width2 = '4MM'
-
+                width1, width2 = '2MM', '4MM'
                 personalization = props.get('Personalization', '')
                 if personalization:
                     pers_lower = personalization.lower()
                     hers_match = re.search(r'hers[^:]*:\s*(\d+)\s*mm', pers_lower)
                     his_match = re.search(r'his[^:]*:\s*(\d+)\s*mm', pers_lower)
-                    if hers_match:
-                        width1 = hers_match.group(1) + 'MM'
-                    if his_match:
-                        width2 = his_match.group(1) + 'MM'
-
+                    if hers_match: width1 = hers_match.group(1) + 'MM'
+                    if his_match: width2 = his_match.group(1) + 'MM'
                 if width1 == '2MM' or width2 == '4MM':
                     if 'hers' in product_lower and 'his' in product_lower:
                         hers_match = re.search(r'hers[^:]*:\s*(\d+)\s*mm', product_lower)
                         his_match = re.search(r'his[^:]*:\s*(\d+)\s*mm', product_lower)
-                        if hers_match:
-                            width1 = hers_match.group(1) + 'MM'
-                        if his_match:
-                            width2 = his_match.group(1) + 'MM'
-                    elif '2mm' in product_lower and '4mm' in product_lower:
-                        width1 = '2MM'
-                        width2 = '4MM'
-                    elif width:
-                        width1 = width
-                        width2 = width
-
+                        if hers_match: width1 = hers_match.group(1) + 'MM'
+                        if his_match: width2 = his_match.group(1) + 'MM'
+                    elif '2mm' in product_lower and '4mm' in product_lower: width1, width2 = '2MM', '4MM'
+                    elif width: width1 = width2 = width
                 if size1:
-                    orders.append({
-                        'Mağaza': store_code,
-                        'Sipariş No': row.get('SiparişNumarası', ''),
-                        'Müşteri': row.get('Alıcı', ''),
-                        'Genişlik': width1,
-                        'Renk': color,
-                        'Model': model,
-                        'Ölçü': size1,
-                        'Kişiselleştirme': props.get('Personalization', ''),
-                        'Ürün': product
-                    })
+                    orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
+                        'Müşteri': row.get('Alıcı', ''), 'Genişlik': width1, 'Renk': color, 'Model': model,
+                        'Ölçü': size1, 'Kişiselleştirme': props.get('Personalization', ''), 'Ürün': product})
                 if size2:
-                    orders.append({
-                        'Mağaza': store_code,
-                        'Sipariş No': row.get('SiparişNumarası', ''),
-                        'Müşteri': row.get('Alıcı', ''),
-                        'Genişlik': width2,
-                        'Renk': color,
-                        'Model': model,
-                        'Ölçü': size2,
-                        'Kişiselleştirme': props.get('Personalization', ''),
-                        'Ürün': product
-                    })
+                    orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
+                        'Müşteri': row.get('Alıcı', ''), 'Genişlik': width2, 'Renk': color, 'Model': model,
+                        'Ölçü': size2, 'Kişiselleştirme': props.get('Personalization', ''), 'Ürün': product})
             else:
-                orders.append({
-                    'Mağaza': store_code,
-                    'Sipariş No': row.get('SiparişNumarası', ''),
-                    'Müşteri': row.get('Alıcı', ''),
-                    'Genişlik': width.upper() if width else '',
-                    'Renk': color,
-                    'Model': model.upper() if model else '',
-                    'Ölçü': ring_size,
-                    'Kişiselleştirme': props.get('Personalization', ''),
-                    'Ürün': product
-                })
+                orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
+                    'Müşteri': row.get('Alıcı', ''), 'Genişlik': width.upper() if width else '',
+                    'Renk': color, 'Model': model.upper() if model else '', 'Ölçü': ring_size,
+                    'Kişiselleştirme': props.get('Personalization', ''), 'Ürün': product})
 
     return pd.DataFrame(orders)
 
@@ -268,28 +167,20 @@ def create_pdf_labels(orders_df):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
-
-    label_width = 5 * cm
-    label_height = 3 * cm
-    margin_x = 0.2 * cm
-    margin_y = 0.2 * cm
-    gap_x = 0.15 * cm
-    gap_y = 0.15 * cm
-    labels_per_row = 4
-    labels_per_column = 9
+    label_width, label_height = 5 * cm, 3 * cm
+    margin_x, margin_y = 0.2 * cm, 0.2 * cm
+    gap_x, gap_y = 0.15 * cm, 0.15 * cm
+    labels_per_row, labels_per_column = 4, 9
     labels_per_page = labels_per_row * labels_per_column
     label_count = 0
 
     for idx, row in orders_df.iterrows():
         col = label_count % labels_per_row
         row_num = (label_count // labels_per_row) % labels_per_column
-
         if label_count > 0 and label_count % labels_per_page == 0:
             c.showPage()
-
         x = margin_x + (col * (label_width + gap_x))
         y = page_height - margin_y - ((row_num + 1) * (label_height + gap_y))
-
         draw_label(c, x, y, label_width, label_height, row)
         label_count += 1
 
@@ -300,80 +191,50 @@ def create_pdf_labels(orders_df):
 
 def draw_label(c, x, y, width, height, data):
     def turkce_to_ascii(text):
-        if not text or pd.isna(text):
-            return ''
+        if not text or pd.isna(text): return ''
         text = str(text)
-        replacements = {
-            'ı': 'i', 'İ': 'I', 'ş': 's', 'Ş': 'S',
-            'ğ': 'g', 'Ğ': 'G', 'ü': 'u', 'Ü': 'U',
-            'ö': 'o', 'Ö': 'O', 'ç': 'c', 'Ç': 'C'
-        }
-        for tr_char, ascii_char in replacements.items():
-            text = text.replace(tr_char, ascii_char)
+        for a, b in {'ı':'i','İ':'I','ş':'s','Ş':'S','ğ':'g','Ğ':'G','ü':'u','Ü':'U','ö':'o','Ö':'O','ç':'c','Ç':'C'}.items():
+            text = text.replace(a, b)
         return text
 
     c.setStrokeColor(black)
     c.setLineWidth(1)
     c.rect(x, y, width, height)
-
     text_x = x + 0.1 * cm
     font_size = 7
-
     store = str(data.get('Mağaza', '')).lower()
+    line_height = height / 7
+
+    for i in range(1, 7):
+        c.setLineWidth(0.3)
+        c.line(x, y + (i * line_height), x + width, y + (i * line_height))
 
     if 'cerasus' in store or store == 'crss':
-        line_height = height / 7
-        for i in range(1, 7):
-            c.setLineWidth(0.3)
-            c.line(x, y + (i * line_height), x + width, y + (i * line_height))
-
         note = ''
         if pd.notna(data.get('Kişiselleştirme')):
-            note = str(data['Kişiselleştirme'])
-            note = note.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
+            note = str(data['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
             note = turkce_to_ascii(note[:30])
-
-        rows = [
-            ('Magaza', 'CRSS'),
-            ('Siparis No', str(data['Sipariş No'])),
-            ('Musteri', turkce_to_ascii(str(data['Müşteri'])[:20])),
-            ('Urun', turkce_to_ascii(str(data['Ürün'])[:25])),
-            ('Zincir', ''),
-            ('Renk', turkce_to_ascii(str(data['Renk'])[:15])),
-            ('Not', note)
-        ]
+        rows = [('Magaza','CRSS'), ('Siparis No', str(data['Sipariş No'])),
+                ('Musteri', turkce_to_ascii(str(data['Müşteri'])[:20])),
+                ('Urun', turkce_to_ascii(str(data['Ürün'])[:25])),
+                ('Zincir', ''), ('Renk', turkce_to_ascii(str(data['Renk'])[:15])), ('Not', note)]
     else:
-        line_height = height / 7
-        for i in range(1, 7):
-            c.setLineWidth(0.3)
-            c.line(x, y + (i * line_height), x + width, y + (i * line_height))
-
         pers_text = ''
         if pd.notna(data['Kişiselleştirme']):
-            pers_text = str(data['Kişiselleştirme'])
-            pers_text = pers_text.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
-            pers_text = pers_text[:30]
-
-        rows = [
-            ('Magaza', str(data.get('Mağaza', 'CPQ'))),
-            ('Siparis No', str(data['Sipariş No'])),
-            ('Musteri Adi', turkce_to_ascii(str(data['Müşteri'])[:25])),
-            ('Genislik', str(data['Genişlik'])),
-            ('Model', turkce_to_ascii(f"{data['Model']} {data['Renk']}".strip())),
-            ('Olcu', str(data['Ölçü'])),
-            ('Lazer', pers_text)
-        ]
+            pers_text = str(data['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')[:30]
+        rows = [('Magaza', str(data.get('Mağaza', 'CPQ'))), ('Siparis No', str(data['Sipariş No'])),
+                ('Musteri Adi', turkce_to_ascii(str(data['Müşteri'])[:25])),
+                ('Genislik', str(data['Genişlik'])),
+                ('Model', turkce_to_ascii(f"{data['Model']} {data['Renk']}".strip())),
+                ('Olcu', str(data['Ölçü'])), ('Lazer', pers_text)]
 
     for i, (label, value) in enumerate(rows):
         row_y = y + height - ((i + 0.65) * line_height)
         c.setFont("Helvetica-Bold", font_size)
         c.drawString(text_x, row_y, label)
         c.setFont("Helvetica", font_size - 1)
-        value_x = x + 1.7 * cm
-        try:
-            c.drawString(value_x, row_y, str(value))
-        except Exception:
-            c.drawString(value_x, row_y, turkce_to_ascii(str(value)))
+        try: c.drawString(x + 1.7 * cm, row_y, str(value))
+        except: c.drawString(x + 1.7 * cm, row_y, turkce_to_ascii(str(value)))
 
 
 def create_uretim_listesi(orders_df):
@@ -392,38 +253,100 @@ def create_kisisellestime_listesi(orders_df):
         return "Kişiselleştirme gerektiren sipariş yok."
     output = "Kişiselleştirme Listesi\n=======================\n\n"
     for _, row in personalized.iterrows():
-        text = str(row['Kişiselleştirme'])
-        text = text.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&').replace('\\n', '\n   ')
-        output += f"Müşteri: {row['Müşteri']}\n"
-        output += f"Genişlik: {row['Genişlik']}\n"
-        output += f"Kişiselleştirme:\n   {text}\n"
-        output += "-" * 80 + "\n\n"
+        text = str(row['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&').replace('\\n', '\n   ')
+        output += f"Müşteri: {row['Müşteri']}\nGenişlik: {row['Genişlik']}\nKişiselleştirme:\n   {text}\n" + "-" * 80 + "\n\n"
     return output
 
 
 def create_kontrol_listesi(orders_df, store_name=''):
-    output = f"Mağaza Adı: {store_name}\nKontrol Listesi\n" + "=" * 170 + "\n\n"
-    output += f"{'Sipariş No':<15} {'Müşteri Adı':>25} {'Genişlik':>9} {'Renk':>6} {'Model':>10} {'Ölçü':>10} "
-    output += f"{'Kişiselleştirme':>90} {'CHECK':>8}\n"
-    output += "-" * 170 + "\n"
-    for _, row in orders_df.iterrows():
+    def tr(text):
+        if not text or str(text) == 'nan': return ''
+        text = str(text)
+        for a, b in {'ı':'i','İ':'I','ş':'s','Ş':'S','ğ':'g','Ğ':'G','ü':'u','Ü':'U','ö':'o','Ö':'O','ç':'c','Ç':'C'}.items():
+            text = text.replace(a, b)
+        return text
+
+    buffer = io.BytesIO()
+    page_w, page_h = landscape(A4)
+    margin = 1 * cm
+    usable_w = page_w - 2 * margin
+
+    col_ratios = [0.12, 0.16, 0.07, 0.07, 0.09, 0.09, 0.34, 0.06]
+    col_labels = ['Siparis No', 'Musteri Adi', 'Genislik', 'Renk', 'Model', 'Olcu', 'Kisisellestime', 'CHECK']
+    col_widths = [usable_w * r for r in col_ratios]
+
+    n = len(orders_df)
+    if n <= 15:   font_size, row_h = 8, 1.0 * cm
+    elif n <= 25: font_size, row_h = 7, 0.85 * cm
+    elif n <= 40: font_size, row_h = 6, 0.72 * cm
+    else:         font_size, row_h = 5.5, 0.65 * cm
+
+    header_h = row_h * 1.3
+    c = canvas.Canvas(buffer, pagesize=landscape(A4))
+
+    def draw_header(y_start):
+        c.setFillColor(black)
+        c.setFont("Helvetica-Bold", font_size + 1)
+        c.drawString(margin, y_start + 0.3 * cm, tr("Magaza: " + str(store_name) + "  |  Kontrol Listesi"))
+        y = y_start - 0.1 * cm
+        c.setFillColor(HexColor("#444444"))
+        c.rect(margin, y - header_h, usable_w, header_h, fill=1, stroke=0)
+        c.setFillColor(HexColor("#ffffff"))
+        c.setFont("Helvetica-Bold", font_size)
+        x = margin
+        for label, w in zip(col_labels, col_widths):
+            c.drawString(x + 3, y - header_h + 4, label)
+            x += w
+        c.setFillColor(black)
+        return y - header_h
+
+    top_y = page_h - margin - 0.6 * cm
+    y = draw_header(top_y)
+
+    for i, (_, row) in enumerate(orders_df.iterrows()):
+        if y - row_h < margin:
+            c.showPage()
+            y = draw_header(page_h - margin - 0.6 * cm)
+
+        if i % 2 == 0:
+            c.setFillColor(HexColor("#f5f5f5"))
+            c.rect(margin, y - row_h, usable_w, row_h, fill=1, stroke=0)
+            c.setFillColor(black)
+
         pers = ''
         if pd.notna(row['Kişiselleştirme']):
-            pers = str(row['Kişiselleştirme'])
-            pers = pers.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&').replace('\\n', ' ')
-            pers = pers[:100]
-        output += (
-            f"{str(row['Sipariş No']):<15} {str(row['Müşteri'])[:25]:>25} "
-            f"{str(row['Genişlik']):>9} {str(row['Renk']):>6} {str(row['Model'])[:10]:>10} "
-            f"{str(row['Ölçü']):>10} {pers:>90} {'[  ]':>8}\n"
-        )
-        output += "-" * 170 + "\n"
-    return output
+            pers = str(row['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&').replace('\\n', ' ')
+
+        vals = [
+            str(row['Sipariş No']),
+            tr(str(row['Müşteri'])),
+            str(row['Genişlik']),
+            tr(str(row['Renk'])),
+            tr(str(row['Model'])),
+            str(row['Ölçü']),
+            tr(pers),
+            '[ ]'
+        ]
+
+        c.setFont("Helvetica", font_size)
+        x = margin
+        for val, w in zip(vals, col_widths):
+            max_chars = int(w / (font_size * 0.58))
+            c.drawString(x + 3, y - row_h + 4, val[:max_chars])
+            x += w
+
+        c.setStrokeColor(HexColor("#cccccc"))
+        c.setLineWidth(0.3)
+        c.line(margin, y - row_h, margin + usable_w, y - row_h)
+        c.setStrokeColor(black)
+        y -= row_h
+
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
-# ─────────────────────────────────────────────
 # Ana uygulama
-# ─────────────────────────────────────────────
 col1, col2 = st.columns([2, 1])
 
 with col1:
@@ -445,7 +368,7 @@ with col2:
     - 📄 PDF Etiketler (3x5cm)
     - 📝 Üretim Listesi
     - 📝 Kişiselleştirme Listesi
-    - 📝 Kontrol Listesi
+    - 📄 Kontrol Listesi (PDF)
     """)
 
 if uploaded_file:
@@ -471,14 +394,10 @@ if uploaded_file:
 
         st.markdown("### 📊 Özet")
         col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Toplam Sipariş", len(orders_df))
-        with col2:
-            st.metric("Kişiselleştirme", orders_df['Kişiselleştirme'].notna().sum())
-        with col3:
-            st.metric("Farklı Model", orders_df['Model'].nunique())
-        with col4:
-            st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
+        with col1: st.metric("Toplam Sipariş", len(orders_df))
+        with col2: st.metric("Kişiselleştirme", orders_df['Kişiselleştirme'].notna().sum())
+        with col3: st.metric("Farklı Model", orders_df['Model'].nunique())
+        with col4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
 
         st.markdown("### 🎨 Dosyaları Oluştur")
 
@@ -489,12 +408,12 @@ if uploaded_file:
                     uretim_txt = create_uretim_listesi(orders_df)
                     kisisel_txt = create_kisisellestime_listesi(orders_df)
                     store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else ''
-                    kontrol_txt = create_kontrol_listesi(orders_df, store_name)
+                    kontrol_pdf = create_kontrol_listesi(orders_df, store_name)
 
                     st.session_state['pdf_ready'] = pdf_buffer.getvalue()
                     st.session_state['uretim_ready'] = uretim_txt.encode('utf-8')
                     st.session_state['kisisel_ready'] = kisisel_txt.encode('utf-8')
-                    st.session_state['kontrol_ready'] = kontrol_txt.encode('utf-8')
+                    st.session_state['kontrol_ready'] = kontrol_pdf
                     st.session_state['files_created'] = True
                     st.session_state['ts'] = datetime.now().strftime('%Y%m%d_%H%M%S')
                 st.rerun()
@@ -506,37 +425,17 @@ if uploaded_file:
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.download_button(
-                    label="📥 PDF Etiketler",
-                    data=st.session_state['pdf_ready'],
-                    file_name=f"etiketler_{ts}.pdf",
-                    mime="application/pdf",
-                    key="dl_pdf"
-                )
+                st.download_button("📥 PDF Etiketler", data=st.session_state['pdf_ready'],
+                    file_name=f"etiketler_{ts}.pdf", mime="application/pdf", key="dl_pdf")
             with col2:
-                st.download_button(
-                    label="📥 Üretim Listesi",
-                    data=st.session_state['uretim_ready'],
-                    file_name=f"uretim_{ts}.txt",
-                    mime="text/plain",
-                    key="dl_uretim"
-                )
+                st.download_button("📥 Üretim Listesi", data=st.session_state['uretim_ready'],
+                    file_name=f"uretim_{ts}.txt", mime="text/plain", key="dl_uretim")
             with col3:
-                st.download_button(
-                    label="📥 Kişiselleştirme",
-                    data=st.session_state['kisisel_ready'],
-                    file_name=f"kisisellestime_{ts}.txt",
-                    mime="text/plain",
-                    key="dl_kisisel"
-                )
+                st.download_button("📥 Kişiselleştirme", data=st.session_state['kisisel_ready'],
+                    file_name=f"kisisellestime_{ts}.txt", mime="text/plain", key="dl_kisisel")
             with col4:
-                st.download_button(
-                    label="📥 Kontrol Listesi",
-                    data=st.session_state['kontrol_ready'],
-                    file_name=f"kontrol_{ts}.txt",
-                    mime="text/plain",
-                    key="dl_kontrol"
-                )
+                st.download_button("📥 Kontrol Listesi", data=st.session_state['kontrol_ready'],
+                    file_name=f"kontrol_{ts}.pdf", mime="application/pdf", key="dl_kontrol")
 
             st.markdown("---")
             if st.button("🔄 Yeni Dosya Yükle", type="secondary"):
@@ -555,7 +454,7 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666;">
-    <b>🏭 Etsy Atölye Yönetim Sistemi v1.1</b><br>
-    CSV + XLSX → PDF Etiket + 3 TXT Liste
+    <b>🏭 Etsy Atölye Yönetim Sistemi v1.2</b><br>
+    CSV + XLSX → PDF Etiket + Üretim + Kişiselleştirme + Kontrol PDF
 </div>
 """, unsafe_allow_html=True)
