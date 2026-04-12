@@ -1,5 +1,7 @@
 streamlit
-pdfplumber
+pandas
 reportlab
 openpyxl
-pandas
+gspread
+google-auth
+streamlit-gsheets-connection
