@@ -7,6 +7,8 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime
+import gspread
+from google.oauth2.service_account import Credentials
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
@@ -49,6 +51,85 @@ st.markdown("""
 
 st.markdown('<h1 class="main-title">🏭 Sipariş Takip Sistemi Sistemi</h1>', unsafe_allow_html=True)
 
+
+
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1xD6d_drnDc9YYnzvT4XGXpuBTtAHB7x2p6Eai1bKlps/edit"
+SHEET_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Model", "Ölçü", 
+              "Durum", "Not", "Tamamlanma Saati", "Ekleyen"]
+
+@st.cache_resource
+def get_gsheet():
+    try:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet = client.open_by_url(SHEET_URL).sheet1
+        return sheet
+    except Exception as e:
+        return None
+
+def load_sheet_data():
+    sheet = get_gsheet()
+    if sheet is None:
+        return pd.DataFrame(columns=SHEET_COLS)
+    try:
+        data = sheet.get_all_records()
+        if not data:
+            return pd.DataFrame(columns=SHEET_COLS)
+        return pd.DataFrame(data)
+    except:
+        return pd.DataFrame(columns=SHEET_COLS)
+
+def sync_orders_to_sheet(orders_df):
+    """Yeni siparişleri sheet'e ekle, mevcutları güncelleme"""
+    sheet = get_gsheet()
+    if sheet is None:
+        return False
+    try:
+        existing = load_sheet_data()
+        existing_nos = set(str(x) for x in existing.get("Sipariş No", pd.Series()).tolist())
+        istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
+        new_rows = []
+        for _, row in orders_df.iterrows():
+            siparis_no = str(row["Sipariş No"])
+            if siparis_no not in existing_nos:
+                new_rows.append([
+                    siparis_no,
+                    str(row.get("Müşteri", "")),
+                    str(row.get("Mağaza", "")),
+                    str(row.get("Genişlik", "")),
+                    str(row.get("Model", "")),
+                    str(row.get("Ölçü", "")),
+                    "⏳ Bekliyor",
+                    "",
+                    "",
+                    ""
+                ])
+        if new_rows:
+            # Header yoksa ekle
+            if sheet.row_count == 0 or sheet.cell(1, 1).value != "Sipariş No":
+                sheet.insert_row(SHEET_COLS, 1)
+            sheet.append_rows(new_rows)
+        return len(new_rows)
+    except Exception as e:
+        return False
+
+def update_order_status(siparis_no, durum, not_text, kullanici):
+    sheet = get_gsheet()
+    if sheet is None:
+        return False
+    try:
+        cell = sheet.find(str(siparis_no))
+        if cell:
+            istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M") if durum == "✅ Tamamlandı" else ""
+            sheet.update_cell(cell.row, 7, durum)
+            sheet.update_cell(cell.row, 8, not_text)
+            sheet.update_cell(cell.row, 9, istanbul_now)
+            sheet.update_cell(cell.row, 10, kullanici)
+        return True
+    except:
+        return False
 
 def xlsx_to_standard_df(df_xlsx):
     rows = []
@@ -511,7 +592,63 @@ def create_kontrol_listesi(orders_df, store_name=''):
 
 
 # ── Ana uygulama ──────────────────────────────
-col_main, col_info = st.columns([3, 1])
+tab1, tab2 = st.tabs(["📦 Sipariş Yükle & Dosyalar", "📊 Sipariş Durumu Takibi"])
+
+with tab2:
+    st.markdown("### 📊 Sipariş Durumu Takibi")
+
+    kullanici = st.text_input("👤 Adınız", placeholder="Adınızı girin...", key="kullanici")
+
+    col_refresh, col_filter = st.columns([1, 3])
+    with col_refresh:
+        if st.button("🔄 Yenile", key="refresh_sheet"):
+            st.cache_resource.clear()
+
+    sheet_df = load_sheet_data()
+
+    if sheet_df.empty:
+        st.info("Henüz sipariş yüklenmemiş. Önce 'Sipariş Yükle' sekmesinden dosya yükleyin.")
+    else:
+        with col_filter:
+            filtre = st.selectbox("Filtre", ["Tümü", "⏳ Bekliyor", "✅ Tamamlandı"], key="durum_filtre")
+
+        goster_df = sheet_df if filtre == "Tümü" else sheet_df[sheet_df["Durum"] == filtre]
+
+        st.markdown(f"**{len(goster_df)} sipariş gösteriliyor**")
+
+        for idx, row in goster_df.iterrows():
+            siparis_no = str(row.get("Sipariş No", ""))
+            musteri = str(row.get("Müşteri", ""))
+            durum = str(row.get("Durum", "⏳ Bekliyor"))
+            not_text = str(row.get("Not", ""))
+            tamamlanma = str(row.get("Tamamlanma Saati", ""))
+
+            renk = "#e8f5e9" if durum == "✅ Tamamlandı" else "#fff8e1"
+            border = "#4caf50" if durum == "✅ Tamamlandı" else "#ff9800"
+
+            with st.expander(f"{durum}  |  #{siparis_no}  —  {musteri}  |  {row.get('Genişlik','')} {row.get('Model','')} {row.get('Ölçü','')}"):
+                col_a, col_b = st.columns([2, 1])
+                with col_a:
+                    yeni_not = st.text_area("Not", value=not_text if not_text != "nan" else "", key=f"not_{siparis_no}_{idx}")
+                with col_b:
+                    yeni_durum = st.selectbox("Durum", ["⏳ Bekliyor", "✅ Tamamlandı"],
+                        index=1 if durum == "✅ Tamamlandı" else 0, key=f"durum_{siparis_no}_{idx}")
+                    if tamamlanma and tamamlanma != "nan":
+                        st.caption(f"Tamamlandı: {tamamlanma}")
+                    if st.button("💾 Kaydet", key=f"save_{siparis_no}_{idx}"):
+                        if not kullanici:
+                            st.warning("Lütfen adınızı girin.")
+                        else:
+                            ok = update_order_status(siparis_no, yeni_durum, yeni_not, kullanici)
+                            if ok:
+                                st.success("Kaydedildi!")
+                                st.cache_resource.clear()
+                                st.rerun()
+                            else:
+                                st.error("Kayıt başarısız.")
+
+with tab1:
+    col_main, col_info = st.columns([3, 1])
 
 with col_info:
     st.markdown("### ℹ️ Bilgi")
@@ -560,6 +697,16 @@ if uploaded_file:
                 orders_df = parse_csv(df)
 
             st.success(f"✅ {len(orders_df)} sipariş işlendi!")
+
+            # Google Sheets'e sync et
+            with st.spinner("Siparişler takip listesine ekleniyor..."):
+                yeni_sayi = sync_orders_to_sheet(orders_df)
+                if yeni_sayi is False:
+                    st.warning("⚠️ Google Sheets bağlantısı kurulamadı. Takip özelliği devre dışı.")
+                elif yeni_sayi > 0:
+                    st.success(f"✅ {yeni_sayi} yeni sipariş takip listesine eklendi!")
+                else:
+                    st.info("ℹ️ Tüm siparişler zaten takip listesinde.")
 
             with st.expander("📋 İşlenmiş Siparişler"):
                 st.dataframe(orders_df)
