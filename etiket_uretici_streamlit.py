@@ -695,13 +695,18 @@ with tab2:
         icon = "🚨" if has_problem else "📦"
         durum_icon = "✅" if durum == "✅ Çözüldü" else ("🔄" if durum == "🔄 İşlemde" else ("⏳" if durum == "⏳ Bekliyor" else ""))
 
-        label = f"{icon} #{siparis_no} — {musteri} | {genislik} {model} {olcu}"
+        # Sorun notunun özeti etikette görünsün
+        not_ozet = ""
+        if has_problem and not_text.strip() not in ["", "nan"]:
+            not_ozet = " — " + not_text[:50] + ("..." if len(not_text) > 50 else "")
+
+        label = f"{icon} #{siparis_no} [{row.get('Mağaza','')}] — {musteri} | {genislik} {model} {olcu}"
         if has_problem:
-            label += f" | {durum_icon} {durum}"
+            label += f" | {durum_icon} {durum}{not_ozet}"
 
         with st.expander(label):
-            if has_problem:
-                st.caption(f"Ekleyen: {ekleyen} | {guncelleme}")
+            if has_problem and (ekleyen.strip() not in ["","nan"] or guncelleme.strip() not in ["","nan"]):
+                st.caption(f"Son düzenleyen: {ekleyen} | {guncelleme}")
 
             col_a, col_b = st.columns([2, 1])
             with col_a:
@@ -712,16 +717,14 @@ with tab2:
                     index=["⏳ Bekliyor","🔄 İşlemde","✅ Çözüldü"].index(durum)
                     if durum in ["⏳ Bekliyor","🔄 İşlemde","✅ Çözüldü"] else 0,
                     key=f"durum_{siparis_no}_{idx}")
-                kullanici_s = st.text_input("Adınız", key=f"kul_{siparis_no}_{idx}")
+                duzenleyen = st.selectbox("Düzenleyen", ["SY", "CK", "GD", "HY"], key=f"kul_{siparis_no}_{idx}")
                 if st.button("💾 Kaydet", key=f"save_{siparis_no}_{idx}", type="primary"):
-                    if not kullanici_s:
-                        st.warning("Adınızı girin.")
-                    elif not yeni_not.strip():
+                    if not yeni_not.strip():
                         st.warning("Sorun notu gerekli.")
                     else:
                         ok = mark_as_problematic(
                             siparis_no, musteri, str(row.get("Mağaza","")),
-                            genislik, model, olcu, yeni_not, yeni_durum, kullanici_s
+                            genislik, model, olcu, yeni_not, yeni_durum, duzenleyen
                         )
                         if ok:
                             st.success("Kaydedildi!")
@@ -741,7 +744,7 @@ with tab2:
         with col_m2:
             m_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="m_durum")
             m_not = st.text_area("Sorun Notu *", key="m_not", height=100)
-            m_kullanici = st.text_input("Adınız *", key="m_kullanici")
+            m_kullanici = st.selectbox("Düzenleyen *", ["SY", "CK", "GD", "HY"], key="m_kullanici")
         if st.button("➕ Ekle", key="m_ekle", type="primary"):
             if not m_siparis_no or not m_not or not m_kullanici:
                 st.warning("Sipariş No, Sorun Notu ve Adınız zorunlu.")
