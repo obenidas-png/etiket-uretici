@@ -727,9 +727,11 @@ with tab2:
     with col_f2:
         durum_filtre = st.selectbox("Durum Filtresi", ["Tümü", "⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="durum_filtre")
     with col_f3:
-        magaza_listesi = ["Tümü"]
+        magaza_listesi = ["Tümü", "CPQ", "CRSS", "FRY"]
         if not sheet_df.empty and "Mağaza" in sheet_df.columns:
-            magaza_listesi += sorted(sheet_df["Mağaza"].dropna().astype(str).unique().tolist())
+            extra = [m for m in sheet_df["Mağaza"].dropna().astype(str).unique().tolist()
+                     if m not in magaza_listesi and m.strip() not in ["", "nan"]]
+            magaza_listesi += sorted(extra)
         magaza_filtre = st.selectbox("Mağaza", magaza_listesi, key="magaza_filtre")
 
     if not sheet_df.empty:
