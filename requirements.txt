@@ -1,3 +1,5 @@
 streamlit
 pdfplumber
 reportlab
+openpyxl
+pandas
