@@ -9,6 +9,8 @@ import io
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
+import urllib.request
+import urllib.parse
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
@@ -56,6 +58,17 @@ st.markdown('<h1 class="main-title">🏭 Sipariş Takip Sistemi</h1>', unsafe_al
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1xD6d_drnDc9YYnzvT4XGXpuBTtAHB7x2p6Eai1bKlps/edit"
 SHEET_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Model", "Ölçü",
               "Durum", "Not", "Güncelleme Saati", "Ekleyen"]
+
+def telegram_bildir(mesaj):
+    try:
+        token = st.secrets["telegram"]["token"]
+        chat_id = st.secrets["telegram"]["chat_id"]
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = f"chat_id={chat_id}&text={urllib.parse.quote(mesaj)}&parse_mode=HTML"
+        req = urllib.request.Request(url, data=data.encode(), method="POST")
+        urllib.request.urlopen(req, timeout=5)
+    except:
+        pass
 
 @st.cache_resource
 def get_gsheet():
@@ -155,6 +168,16 @@ def mark_as_problematic(siparis_no, musteri, magaza, genislik, model, olcu, not_
                 siparis_no, musteri, magaza, genislik, model, olcu,
                 durum, not_text, istanbul_now, kullanici
             ])
+        # Telegram bildirimi
+        istanbul_now2 = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
+        telegram_bildir(
+            f"🚨 <b>Sorunlu Sipariş</b>\n"
+            f"📦 #{siparis_no} [{magaza}]\n"
+            f"👤 {musteri}\n"
+            f"⚠️ {not_text}\n"
+            f"📊 {durum}\n"
+            f"✏️ {kullanici} · {istanbul_now2}"
+        )
         return True
     except:
         return False
