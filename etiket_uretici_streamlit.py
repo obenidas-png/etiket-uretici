@@ -689,14 +689,49 @@ with tab2:
         if st.button("🔄 Yenile", key="refresh_sheet"):
             get_gsheet.clear()
 
-    sheet_df = load_sheet_data()
+st.markdown("---")
+    # Manuel sipariş ekleme
+    with st.expander("➕ Manuel Sipariş No ile Ekle"):
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            m_siparis_no = st.text_input("Sipariş No *", key="m_sipno")
+            m_musteri = st.text_input("Müşteri Adı", key="m_musteri")
+            m_genislik = st.text_input("Genişlik", key="m_genislik")
+        with col_m2:
+            m_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="m_durum")
+            m_sorun_tipi = st.selectbox("Sorun Kategorisi *",
+                ["Yok", "Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"],
+                key="m_sorun_tipi")
+            m_ek_not = st.text_area("Ek Not (opsiyonel)", key="m_not", height=80)
+            m_not = m_sorun_tipi + (" - " + m_ek_not if m_ek_not.strip() else "")
+            m_kullanici = st.selectbox("Düzenleyen *", ["SY", "CK", "GD", "HY"], key="m_kullanici")
+        if st.button("➕ Ekle", key="m_ekle", type="primary"):
+            if not m_siparis_no or not m_kullanici:
+                st.warning("Sipariş No ve Düzenleyen zorunlu.")
+            else:
+                ok = mark_as_problematic(m_siparis_no, m_musteri, "", m_genislik, "", "", m_not, m_durum, m_kullanici)
+                if ok:
+                    st.success(f"#{m_siparis_no} eklendi!")
+                    get_gsheet.clear()
+                    st.rerun()
+                else:
+                    st.error("Eklenemedi.")
+
+    st.markdown("---")
+
+        sheet_df = load_sheet_data()
 
     # Filtre — sadece sorunlular veya tümü
-    col_f1, col_f2 = st.columns([2, 3])
+    col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
         goster_filtre = st.selectbox("Göster", ["Sadece Sorunlular", "Tüm Siparişler"], key="goster_filtre")
     with col_f2:
         durum_filtre = st.selectbox("Durum Filtresi", ["Tümü", "⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="durum_filtre")
+    with col_f3:
+        magaza_listesi = ["Tümü"]
+        if not sheet_df.empty and "Mağaza" in sheet_df.columns:
+            magaza_listesi += sorted(sheet_df["Mağaza"].dropna().astype(str).unique().tolist())
+        magaza_filtre = st.selectbox("Mağaza", magaza_listesi, key="magaza_filtre")
 
     if not sheet_df.empty:
         goster_df = sheet_df.copy()
@@ -706,6 +741,8 @@ with tab2:
                 goster_df = goster_df[~goster_df[not_col].astype(str).str.strip().isin(["", "nan", "Yok"])]
         if durum_filtre != "Tümü":
             goster_df = goster_df[goster_df["Durum"] == durum_filtre]
+        if magaza_filtre != "Tümü" and "Mağaza" in goster_df.columns:
+            goster_df = goster_df[goster_df["Mağaza"].astype(str) == magaza_filtre]
         # Güncelleme tarihine göre sırala (en eski üste, tarihi olmayanlar sona)
         def parse_tarih(t):
             try:
@@ -793,33 +830,6 @@ with tab2:
                         else:
                             st.error("Kayıt başarısız.")
 
-    st.markdown("---")
-    # Manuel sipariş ekleme
-    with st.expander("➕ Manuel Sipariş No ile Ekle"):
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            m_siparis_no = st.text_input("Sipariş No *", key="m_sipno")
-            m_musteri = st.text_input("Müşteri Adı", key="m_musteri")
-            m_genislik = st.text_input("Genişlik", key="m_genislik")
-        with col_m2:
-            m_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="m_durum")
-            m_sorun_tipi = st.selectbox("Sorun Kategorisi *",
-                ["Yok", "Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"],
-                key="m_sorun_tipi")
-            m_ek_not = st.text_area("Ek Not (opsiyonel)", key="m_not", height=80)
-            m_not = m_sorun_tipi + (" - " + m_ek_not if m_ek_not.strip() else "")
-            m_kullanici = st.selectbox("Düzenleyen *", ["SY", "CK", "GD", "HY"], key="m_kullanici")
-        if st.button("➕ Ekle", key="m_ekle", type="primary"):
-            if not m_siparis_no or not m_kullanici:
-                st.warning("Sipariş No ve Düzenleyen zorunlu.")
-            else:
-                ok = mark_as_problematic(m_siparis_no, m_musteri, "", m_genislik, "", "", m_not, m_durum, m_kullanici)
-                if ok:
-                    st.success(f"#{m_siparis_no} eklendi!")
-                    get_gsheet.clear()
-                    st.rerun()
-                else:
-                    st.error("Eklenemedi.")
 
 
 with tab1:
