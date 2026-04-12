@@ -12,6 +12,7 @@ from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import black, HexColor
 import re
+from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="Sipariş Takip Sistemi", page_icon="🏭", layout="wide")
 
@@ -266,13 +267,27 @@ def draw_label(c, x, y, width, height, data):
             ('Lazer', pers_text)
         ]
 
+    value_x = x + 1.7 * cm
+    max_value_w = width - 1.7 * cm - 0.1 * cm
+
     for i, (label, value) in enumerate(rows):
         row_y = y + height - ((i + 0.65) * line_height)
         c.setFont("Helvetica-Bold", font_size)
         c.drawString(text_x, row_y, label)
-        c.setFont("Helvetica", font_size - 1)
-        try: c.drawString(x + 1.7 * cm, row_y, str(value))
-        except: c.drawString(x + 1.7 * cm, row_y, turkce_to_ascii(str(value)))
+
+        val_str = str(value)
+        if label == 'Lazer' and val_str:
+            # Metni sığdıracak font boyutunu bul
+            val_font = font_size - 1
+            c.setFont("Helvetica", val_font)
+            while val_font > 4 and c.stringWidth(val_str, "Helvetica", val_font) > max_value_w:
+                val_font -= 0.5
+            c.setFont("Helvetica", val_font)
+        else:
+            c.setFont("Helvetica", font_size - 1)
+
+        try: c.drawString(value_x, row_y, val_str)
+        except: c.drawString(value_x, row_y, turkce_to_ascii(val_str))
 
 
 def create_lazer_labels(orders_df):
@@ -407,8 +422,8 @@ def create_kontrol_listesi(orders_df, store_name=''):
     margin = 1 * cm
     usable_w = page_w - 2 * margin
 
-    col_ratios = [0.12, 0.16, 0.07, 0.07, 0.09, 0.09, 0.34, 0.06]
-    col_labels = ['Siparis No', 'Musteri Adi', 'Genislik', 'Renk', 'Model', 'Olcu', 'Kisisellestime', 'CHECK']
+    col_ratios = [0.11, 0.15, 0.06, 0.06, 0.08, 0.08, 0.28, 0.14, 0.04]
+    col_labels = ['Siparis No', 'Musteri Adi', 'Genislik', 'Renk', 'Model', 'Olcu', 'Kisisellestime', 'NOT', 'CHECK']
     col_widths = [usable_w * r for r in col_ratios]
 
     n = len(orders_df)
@@ -423,7 +438,8 @@ def create_kontrol_listesi(orders_df, store_name=''):
     def draw_header(y_start):
         c.setFillColor(black)
         c.setFont("Helvetica-Bold", font_size + 1)
-        c.drawString(margin, y_start + 0.3 * cm, tr("Magaza: " + str(store_name) + "  |  Kontrol Listesi"))
+        istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
+        c.drawString(margin, y_start + 0.3 * cm, tr("Magaza: " + str(store_name) + "  |  Kontrol Listesi  |  " + istanbul_now))
         y = y_start - 0.1 * cm
         c.setFillColor(HexColor("#444444"))
         c.rect(margin, y - header_h, usable_w, header_h, fill=1, stroke=0)
@@ -461,13 +477,24 @@ def create_kontrol_listesi(orders_df, store_name=''):
             tr(str(row['Model'])),
             str(row['Ölçü']),
             tr(pers),
+            '',
             '[ ]'
         ]
 
-        c.setFont("Helvetica", font_size)
+        # Genişlik, Renk veya Model eksikse kalın yaz
+        eksik = (
+            not str(row['Genişlik']).strip() or
+            not str(row['Renk']).strip() or
+            not str(row['Model']).strip() or
+            str(row['Genişlik']) == 'nan' or
+            str(row['Renk']) == 'nan' or
+            str(row['Model']) == 'nan'
+        )
+        row_font = "Helvetica-Bold" if eksik else "Helvetica"
         x = margin
         for val, w in zip(vals, col_widths):
             max_chars = int(w / (font_size * 0.58))
+            c.setFont(row_font, font_size)
             c.drawString(x + 3, y - row_h + 4, val[:max_chars])
             x += w
 
