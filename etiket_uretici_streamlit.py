@@ -99,36 +99,23 @@ def load_orders_to_session(orders_df):
         yeni_siparis_nolar = set(str(r["Sipariş No"]) for _, r in orders_df.iterrows())
 
         if not existing.empty:
-            # Sheet'i yeniden oluştur: sorunluları tut + yeni siparişleri ekle
-            sorunlular = existing[
-                existing["Not"].notna() & (existing["Not"].astype(str).str.strip() != "")
-            ].copy()
-
-            # Yeni sipariş satırları (sheet'te hiç yoksa)
-            sorunlu_nos = set(str(x) for x in sorunlular["Sipariş No"].tolist())
+            # Mevcut sheet'teki sipariş no + genişlik kombinasyonları
+            existing_keys = set(
+                str(r.get("Sipariş No","")) + "_" + str(r.get("Genişlik",""))
+                for _, r in existing.iterrows()
+            )
+            # Sadece sheet'te olmayan yeni siparişleri ekle
             new_rows = []
             for _, row in orders_df.iterrows():
-                siparis_no = str(row["Sipariş No"])
-                key = siparis_no + "_" + str(row.get("Genişlik", ""))
-                # Sorunlular arasında değilse ve henüz eklenmemişse ekle
-                already = any(
-                    str(r.get("Sipariş No","")) == siparis_no and
-                    str(r.get("Genişlik","")) == str(row.get("Genişlik",""))
-                    for _, r in sorunlular.iterrows()
-                )
-                if not already:
+                key = str(row["Sipariş No"]) + "_" + str(row.get("Genişlik",""))
+                if key not in existing_keys:
                     new_rows.append([
-                        siparis_no, str(row.get("Müşteri","")), str(row.get("Mağaza","")),
+                        str(row["Sipariş No"]), str(row.get("Müşteri","")), str(row.get("Mağaza","")),
                         str(row.get("Genişlik","")), str(row.get("Model","")), str(row.get("Ölçü","")),
                         "", "", "", ""
                     ])
-
-            # Sheet'i tamamen yenile
-            sheet.clear()
-            sheet.append_row(SHEET_COLS)
-            all_rows = sorunlular.values.tolist() + new_rows
-            if all_rows:
-                sheet.append_rows(all_rows)
+            if new_rows:
+                sheet.append_rows(new_rows)
             return len(new_rows)
         else:
             # Sheet boşsa direkt ekle
@@ -714,7 +701,10 @@ with tab2:
     if not sheet_df.empty:
         goster_df = sheet_df.copy()
         if goster_filtre == "Sadece Sorunlular":
-            goster_df = goster_df[goster_df["Not"].notna() & (goster_df["Not"].astype(str).str.strip() != "")]
+            not_col = "Not" if "Not" in goster_df.columns else None
+            if not_col:
+                goster_df = goster_df[goster_df[not_col].notna() & (goster_df[not_col].astype(str).str.strip() not in ["", "nan"])]
+                goster_df = goster_df[~goster_df[not_col].astype(str).str.strip().isin(["", "nan"])]
         if durum_filtre != "Tümü":
             goster_df = goster_df[goster_df["Durum"] == durum_filtre]
         # Güncelleme tarihine göre sırala (en eski üste, tarihi olmayanlar sona)
@@ -768,14 +758,14 @@ with tab2:
                 # Mevcut notu kategori + ek not olarak ayır
                 mevcut_kategori = ""
                 mevcut_aciklama = not_text if not_text not in ["", "nan"] else ""
-                for _tip in ["Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"]:
+                for _tip in ["Yok", "Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"]:
                     if mevcut_aciklama.startswith(_tip):
                         mevcut_kategori = _tip
                         mevcut_aciklama = mevcut_aciklama[len(_tip):].lstrip(" |-").strip()
                         break
                 sorun_tipi = st.selectbox(
                     "Sorun Kategorisi",
-                    ["Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"],
+                    ["Yok", "Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"],
                     index=["Ölçü Değişikliği","Genişlik Yok","Adres-Kargo","İade-İptal","Kişiselleştirme","Diğer"].index(mevcut_kategori)
                     if mevcut_kategori in ["Ölçü Değişikliği","Genişlik Yok","Adres-Kargo","İade-İptal","Kişiselleştirme","Diğer"] else 0,
                     key=f"tip_{siparis_no}_{idx}"
@@ -815,7 +805,7 @@ with tab2:
         with col_m2:
             m_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="m_durum")
             m_sorun_tipi = st.selectbox("Sorun Kategorisi *",
-                ["Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"],
+                ["Yok", "Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"],
                 key="m_sorun_tipi")
             m_ek_not = st.text_area("Ek Not (opsiyonel)", key="m_not", height=80)
             m_not = m_sorun_tipi + (" - " + m_ek_not if m_ek_not.strip() else "")
