@@ -703,8 +703,7 @@ with tab2:
         if goster_filtre == "Sadece Sorunlular":
             not_col = "Not" if "Not" in goster_df.columns else None
             if not_col:
-                goster_df = goster_df[goster_df[not_col].notna() & (goster_df[not_col].astype(str).str.strip() not in ["", "nan"])]
-                goster_df = goster_df[~goster_df[not_col].astype(str).str.strip().isin(["", "nan"])]
+                goster_df = goster_df[~goster_df[not_col].astype(str).str.strip().isin(["", "nan", "Yok"])]
         if durum_filtre != "Tümü":
             goster_df = goster_df[goster_df["Durum"] == durum_filtre]
         # Güncelleme tarihine göre sırala (en eski üste, tarihi olmayanlar sona)
