@@ -482,68 +482,65 @@ if uploaded_file:
 
         st.markdown("### 🎨 Dosyaları Oluştur")
 
-        if st.button("🚀 TÜM DOSYALARI OLUŞTUR", type="primary"):
-            with st.spinner("Dosyalar oluşturuluyor..."):
-                pdf_buffer = create_pdf_labels(orders_df)
-                uretim_txt = create_uretim_listesi(orders_df)
-                kisisel_txt = create_kisisellestime_listesi(orders_df)
-                store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else ''
-                kontrol_txt = create_kontrol_listesi(orders_df, store_name)
+        if not st.session_state.get('files_created', False):
+            if st.button("🚀 TÜM DOSYALARI OLUŞTUR", type="primary"):
+                with st.spinner("Dosyalar oluşturuluyor..."):
+                    pdf_buffer = create_pdf_labels(orders_df)
+                    uretim_txt = create_uretim_listesi(orders_df)
+                    kisisel_txt = create_kisisellestime_listesi(orders_df)
+                    store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else ''
+                    kontrol_txt = create_kontrol_listesi(orders_df, store_name)
 
-                st.session_state['pdf_ready'] = pdf_buffer.getvalue()
-                st.session_state['uretim_ready'] = uretim_txt.encode('utf-8')
-                st.session_state['kisisel_ready'] = kisisel_txt.encode('utf-8')
-                st.session_state['kontrol_ready'] = kontrol_txt.encode('utf-8')
-                st.session_state['files_created'] = True
-                st.session_state['ts'] = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    st.session_state['pdf_ready'] = pdf_buffer.getvalue()
+                    st.session_state['uretim_ready'] = uretim_txt.encode('utf-8')
+                    st.session_state['kisisel_ready'] = kisisel_txt.encode('utf-8')
+                    st.session_state['kontrol_ready'] = kontrol_txt.encode('utf-8')
+                    st.session_state['files_created'] = True
+                    st.session_state['ts'] = datetime.now().strftime('%Y%m%d_%H%M%S')
+                st.rerun()
 
+        else:
             st.success("✅ Tüm dosyalar hazır!")
-            st.balloons()
-
-        if st.session_state.get('files_created', False):
-            st.markdown("### 📥 Dosyaları İndir")
             ts = st.session_state.get('ts', 'dosya')
-            render_id = st.session_state.get('render_id', 0)
+            st.markdown("### 📥 Dosyaları İndir")
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.download_button(
                     label="📥 PDF Etiketler",
-                    data=bytes(st.session_state['pdf_ready']),
+                    data=st.session_state['pdf_ready'],
                     file_name=f"etiketler_{ts}.pdf",
                     mime="application/pdf",
-                    key=f"dl_pdf_{render_id}"
+                    key="dl_pdf"
                 )
             with col2:
                 st.download_button(
                     label="📥 Üretim Listesi",
-                    data=bytes(st.session_state['uretim_ready']),
+                    data=st.session_state['uretim_ready'],
                     file_name=f"uretim_{ts}.txt",
                     mime="text/plain",
-                    key=f"dl_uretim_{render_id}"
+                    key="dl_uretim"
                 )
             with col3:
                 st.download_button(
                     label="📥 Kişiselleştirme",
-                    data=bytes(st.session_state['kisisel_ready']),
+                    data=st.session_state['kisisel_ready'],
                     file_name=f"kisisellestime_{ts}.txt",
                     mime="text/plain",
-                    key=f"dl_kisisel_{render_id}"
+                    key="dl_kisisel"
                 )
             with col4:
                 st.download_button(
                     label="📥 Kontrol Listesi",
-                    data=bytes(st.session_state['kontrol_ready']),
+                    data=st.session_state['kontrol_ready'],
                     file_name=f"kontrol_{ts}.txt",
                     mime="text/plain",
-                    key=f"dl_kontrol_{render_id}"
+                    key="dl_kontrol"
                 )
-
-            st.session_state['render_id'] = render_id + 1
 
             st.markdown("---")
             if st.button("🔄 Yeni Dosya Yükle", type="secondary"):
-                for k in ['files_created', 'pdf_ready', 'uretim_ready', 'kisisel_ready', 'kontrol_ready', 'ts', 'last_file_name', 'render_id']:
+                for k in ['files_created', 'pdf_ready', 'uretim_ready', 'kisisel_ready', 'kontrol_ready', 'ts', 'last_file_name']:
                     st.session_state.pop(k, None)
                 st.rerun()
 
