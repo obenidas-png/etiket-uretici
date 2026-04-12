@@ -695,8 +695,7 @@ with tab2:
         col_m1, col_m2 = st.columns(2)
         with col_m1:
             m_siparis_no = st.text_input("Sipariş No *", key="m_sipno")
-            m_musteri = st.text_input("Müşteri Adı", key="m_musteri")
-            m_genislik = st.text_input("Genişlik", key="m_genislik")
+            m_magaza = st.selectbox("Mağaza", ["CPQ", "CRSS", "FRY", "Diğer"], key="m_magaza")
         with col_m2:
             m_durum = st.selectbox("Durum", ["⏳ Bekliyor", "🔄 İşlemde", "✅ Çözüldü"], key="m_durum")
             m_sorun_tipi = st.selectbox("Sorun Kategorisi *",
@@ -709,7 +708,7 @@ with tab2:
             if not m_siparis_no or not m_kullanici:
                 st.warning("Sipariş No ve Düzenleyen zorunlu.")
             else:
-                ok = mark_as_problematic(m_siparis_no, m_musteri, "", m_genislik, "", "", m_not, m_durum, m_kullanici)
+                ok = mark_as_problematic(m_siparis_no, "", m_magaza, "", "", "", m_not, m_durum, m_kullanici)
                 if ok:
                     st.success(f"#{m_siparis_no} eklendi!")
                     get_gsheet.clear()
