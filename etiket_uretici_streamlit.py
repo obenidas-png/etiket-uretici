@@ -12,6 +12,7 @@ from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import black
 import re
+import openpyxl  # Excel okumak için
 
 # Sayfa ayarları
 st.set_page_config(
@@ -43,6 +44,69 @@ st.markdown("""
 st.markdown('<h1 class="main-title">🏭 Etsy Atölye Yönetim Sistemi</h1>', unsafe_allow_html=True)
 
 # Fonksiyonlar
+def convert_shipentegra_excel_to_etsy(df_shipentegra):
+    """ShipEntegra Excel formatını Etsy CSV formatına çevirir"""
+    etsy_rows = []
+    
+    for idx, row in df_shipentegra.iterrows():
+        # Mağaza adı
+        store_name = str(row.get('Market - Store Name', ''))
+        
+        # Müşteri adı
+        customer = str(row.get('Ship To - Name', ''))
+        
+        # Adres
+        address1 = str(row.get('Ship To - Address 1', ''))
+        address2 = str(row.get('Ship To - Address 2', ''))
+        city = str(row.get('Ship To - City', ''))
+        state = str(row.get('Ship To - State', ''))
+        postal = str(row.get('Ship To - Postal Code', ''))
+        country = str(row.get('Ship To - Country', ''))
+        address = f"{address1} {address2}null{city}{state}{postal}{country}"
+        
+        # Tarih
+        order_date = row.get('Date - Order Date', '')
+        
+        # Sipariş numarası
+        order_number = str(row.get('Order - Number', ''))
+        
+        # Ürün
+        product = str(row.get('Item - Name', ''))
+        quantity = int(row.get('Item - Qty', 1))
+        
+        # Özellikler
+        properties = []
+        opt_name1 = row.get('Options Name 1', '')
+        opt_val1 = row.get('Options Value 1', '')
+        if pd.notna(opt_name1) and pd.notna(opt_val1):
+            properties.append(f"Ad:{opt_name1},Değer:{opt_val1}")
+        
+        opt_name2 = row.get('Options Name 2', '')
+        opt_val2 = row.get('Options Value 2', '')
+        if pd.notna(opt_name2) and pd.notna(opt_val2):
+            properties.append(f"Ad:{opt_name2},Değer:{opt_val2}")
+        
+        properties_str = ','.join(properties)
+        
+        # Etsy formatında satır
+        etsy_row = {
+            'MagazaAdı': store_name,
+            'Alıcı': customer,
+            'Adres': address,
+            'SiparişTarihi': order_date,
+            'SiparişNumarası': order_number,
+            'Barkod': '',
+            'Sku': str(row.get('Item - SKU', '')),
+            'ÜrünAdı': product,
+            'Adet': quantity,
+            'Özellikler': properties_str
+        }
+        
+        etsy_rows.append(etsy_row)
+    
+    return pd.DataFrame(etsy_rows)
+
+
 def parse_csv(df):
     """CSV'yi işle ve sipariş listesi oluştur"""
     orders = []
@@ -598,16 +662,20 @@ def create_kontrol_listesi(orders_df, store_name=''):
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.markdown("### 📤 CSV Dosyası Yükle")
+    st.markdown("### 📤 Dosya Yükle")
     uploaded_file = st.file_uploader(
-        "Etsy siparişlerinizi içeren CSV dosyasını seçin",
-        type=['csv'],
-        help="Etsy'den export ettiğiniz CSV dosyasını yükleyin (dosya adı önemli değil, format önemli)"
+        "CSV veya Excel dosyanızı seçin",
+        type=['csv', 'xlsx', 'xls'],
+        help="Etsy CSV veya ShipEntegra Excel dosyasını yükleyin"
     )
 
 with col2:
     st.markdown("### ℹ️ Bilgi")
     st.info("""
+    **Kabul Edilen Formatlar:**
+    - 📄 CSV (Etsy export)
+    - 📊 Excel (ShipEntegra export)
+    
     **Oluşacak Dosyalar:**
     - 📄 PDF Etiketler (3x5cm)
     - 📝 Üretim Listesi
@@ -622,8 +690,21 @@ if uploaded_file:
             st.session_state['files_created'] = False
             st.session_state['last_file_name'] = uploaded_file.name
         
-        # CSV'yi oku
-        df = pd.read_csv(uploaded_file)
+        # Dosya tipine göre oku
+        file_extension = uploaded_file.name.split('.')[-1].lower()
+        
+        if file_extension == 'csv':
+            df = pd.read_csv(uploaded_file)
+        elif file_extension in ['xlsx', 'xls']:
+            df = pd.read_excel(uploaded_file)
+            # ShipEntegra formatını Etsy formatına çevir
+            if 'Ship To - Name' in df.columns:  # ShipEntegra Excel formatı
+                st.info("📊 ShipEntegra Excel formatı tespit edildi, dönüştürülüyor...")
+                df = convert_shipentegra_excel_to_etsy(df)
+        else:
+            st.error("❌ Desteklenmeyen dosya formatı!")
+            st.stop()
+        
         st.success(f"✅ {len(df)} ham sipariş yüklendi!")
         
         # İşle
