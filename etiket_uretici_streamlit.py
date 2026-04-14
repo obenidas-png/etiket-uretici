@@ -649,6 +649,31 @@ def draw_lazer_label(c, x, y, width, height, data):
     c.setFont("Helvetica", font_size)
     c.drawString(text_x + label_col_w, row_y, str(data.get('Genişlik', '')))
 
+    # Renk
+    row_y -= 0.6 * cm
+    c.setFont("Helvetica-Bold", font_size)
+    c.drawString(text_x, row_y, "Renk:")
+    c.setFont("Helvetica", font_size)
+    
+    # Renk kısaltma
+    color = str(data.get('Renk', ''))
+    color_short = ''
+    color_lower = color.lower()
+    
+    if 'yellow' in color_lower or 'sari' in color_lower or 'sarı' in color_lower:
+        color_short = 'SARI'
+    elif 'rose' in color_lower or 'pembe' in color_lower:
+        color_short = 'ROSE'
+    elif 'white' in color_lower or 'beyaz' in color_lower:
+        if 'matte' in color_lower or 'mat' in color_lower:
+            color_short = 'MAT BEYAZ'
+        else:
+            color_short = 'BEYAZ'
+    else:
+        color_short = turkce_to_ascii(color[:10])
+    
+    c.drawString(text_x + label_col_w, row_y, color_short)
+
     # Kişiselleştirme — satırlara böl
     row_y -= 0.6 * cm
     c.setFont("Helvetica-Bold", font_size)
