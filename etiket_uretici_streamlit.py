@@ -206,8 +206,8 @@ def xlsx_to_standard_df(df_xlsx):
             name = row.get(f'Options Name {i}')
             value = row.get(f'Options Value {i}')
             if pd.notna(name) and pd.notna(value):
-                ozellikler_parts.append(f"Ad:{name}, Değer:{value}")
-        ozellikler = ", ".join(ozellikler_parts)
+                ozellikler_parts.append(f"Ad:{name},Değer:{value}")
+        ozellikler = ",".join(ozellikler_parts)
         buyer_note = str(row.get('Notes - From Buyer', '') or '')
         rows.append({
             'MagazaAdı':       row.get('Market - Store Name', ''),
@@ -253,14 +253,21 @@ def parse_csv(df):
         ]):
             continue
 
+        # ═══════════════════════════════════════════════════════════
+        # ✅ İYİLEŞTİRME 1: VİRGÜLLÜ KİŞİSELLEŞTİRME PARSE
+        # ═══════════════════════════════════════════════════════════
         props = {}
         if pd.notna(row.get('Özellikler')):
-            parts = str(row['Özellikler']).split(',')
-            for i in range(0, len(parts), 2):
-                if i + 1 < len(parts):
-                    key = parts[i].replace('Ad:', '').strip()
-                    value = parts[i + 1].replace('Değer:', '').strip()
-                    props[key] = value
+            properties_str = str(row['Özellikler'])
+            
+            # Regex ile Ad: ve Değer: çiftlerini bul
+            pattern = r'Ad:([^,]+),Değer:([^,]+(?:,[^A][^d][^:]*)*?)(?=,Ad:|$)'
+            matches = re.findall(pattern, properties_str)
+            
+            for key, value in matches:
+                # HTML entities temizle
+                value_clean = value.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
+                props[key.strip()] = value_clean.strip()
 
         if row.get('_BuyerNote'):
             props.setdefault('Personalization', row['_BuyerNote'])
@@ -284,6 +291,10 @@ def parse_csv(df):
             width = props.get('Width', props.get('Band Width', ''))
             if 'white gold' in product_lower or 'beyaz' in product_lower: color = 'BEYAZ'
             elif 'yellow gold' in product_lower or 'sarı' in product_lower or 'gold filled' in product_lower: color = 'SARI'
+            elif 'rose' in product_lower or 'pembe' in product_lower: color = 'ROSE'
+            if 'matte' in product_lower or 'mat' in product_lower:
+                if color == 'BEYAZ': color = 'MAT BEYAZ'
+            
             if 'resizing' in product_lower or 'size adjustment' in product_lower or 'replacement' in product_lower: model = 'YENİLEME'
             elif 'bevel' in product_lower: model = 'ÇATI MAT' if ('matte' in product_lower or 'mat' in product_lower) else 'ÇATI'
             elif 'dome' in product_lower: model = 'BOMBE'
@@ -346,6 +357,84 @@ def turkce_to_ascii(text):
     return text
 
 
+# ═══════════════════════════════════════════════════════════
+# ✅ İYİLEŞTİRME 2: ÖLÇÜ ONDALIK SİSTEME ÇEVİRME
+# ═══════════════════════════════════════════════════════════
+def convert_size_to_decimal(size_str):
+    """Ring size'ı ondalık sisteme çevirir
+    Örnek: '5 1/2 US' → '5.50'
+            '7 3/4 US' → '7.75'
+            '11 US' → '11.00'
+    """
+    if not size_str or pd.isna(size_str):
+        return '0.00'
+    
+    size_str = str(size_str).strip()
+    
+    # "US" kelimesini çıkar
+    size_str = size_str.replace(' US', '').replace('US', '').strip()
+    
+    # Kesir varsa parse et
+    if '/' in size_str:
+        parts = size_str.split()
+        
+        if len(parts) == 2:  # "5 1/2" formatı
+            whole = int(parts[0])
+            fraction_parts = parts[1].split('/')
+            numerator = int(fraction_parts[0])
+            denominator = int(fraction_parts[1])
+            decimal = whole + (numerator / denominator)
+        elif len(parts) == 1:  # "1/2" formatı (sadece kesir)
+            fraction_parts = parts[0].split('/')
+            numerator = int(fraction_parts[0])
+            denominator = int(fraction_parts[1])
+            decimal = numerator / denominator
+        else:
+            decimal = float(size_str.split()[0])  # İlk sayıyı al
+    else:
+        # Kesir yok, direkt sayı
+        try:
+            decimal = float(size_str)
+        except:
+            return '0.00'
+    
+    return f"{decimal:.2f}"
+
+
+# ═══════════════════════════════════════════════════════════
+# ✅ İYİLEŞTİRME 3: AKILLI SIRALAMA FONKSİYONLARI
+# ═══════════════════════════════════════════════════════════
+def get_model_priority(model):
+    """Model önceliğini belirler (sıralama için)"""
+    model_lower = str(model).lower()
+    
+    # Öncelik sırası
+    if 'bombe' in model_lower:
+        return 1
+    elif 'çati' in model_lower or 'cati' in model_lower:
+        return 2
+    elif 'düz' in model_lower or 'duz' in model_lower or 'flat' in model_lower:
+        return 3
+    elif 'oval' in model_lower or 'tektaş' in model_lower or 'tektas' in model_lower:
+        return 4
+    else:
+        return 5  # Diğer modeller en sona
+
+
+def get_width_numeric(width_str):
+    """Genişliği sayısal değere çevirir (sıralama için)
+    Örnek: '2MM' → 2, '5MM' → 5
+    """
+    if not width_str or pd.isna(width_str):
+        return 0
+    
+    width_str = str(width_str).upper().replace('MM', '').strip()
+    try:
+        return int(width_str)
+    except:
+        return 0
+
+
 def create_pdf_labels(orders_df):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -380,13 +469,13 @@ def draw_label(c, x, y, width, height, data):
     font_size = 7
     store = str(data.get('Mağaza', '')).lower()
     coklu = data.get('Çoklu', False)
-    line_height = height / 7
-
-    for i in range(1, 7):
-        c.setLineWidth(0.3)
-        c.line(x, y + (i * line_height), x + width, y + (i * line_height))
 
     if 'cerasus' in store or store == 'crss':
+        line_height = height / 7
+        for i in range(1, 7):
+            c.setLineWidth(0.3)
+            c.line(x, y + (i * line_height), x + width, y + (i * line_height))
+        
         note = ''
         if pd.notna(data.get('Kişiselleştirme')):
             note = str(data['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
@@ -402,19 +491,66 @@ def draw_label(c, x, y, width, height, data):
             ('Not', note)
         ]
     else:
-        pers_text = ''
+        # ═══════════════════════════════════════════════════════════
+        # ✅ İYİLEŞTİRME 4+5: RENK AYRI SATIR + LAZER 2 SATIR
+        # ═══════════════════════════════════════════════════════════
+        line_height = height / 8  # 7'den 8'e çıktı
+        for i in range(1, 8):
+            c.setLineWidth(0.3)
+            c.line(x, y + (i * line_height), x + width, y + (i * line_height))
+        
+        # Kişiselleştirme metnini temizle ve 2 satıra böl
+        pers_text_line1 = ''
+        pers_text_line2 = ''
+        
         if pd.notna(data['Kişiselleştirme']):
-            pers_text = str(data['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')[:30]
+            pers_full = str(data['Kişiselleştirme'])
+            pers_full = pers_full.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
+            
+            # 1. satıra max 30 karakter
+            if len(pers_full) <= 30:
+                pers_text_line1 = pers_full
+            else:
+                # 30. karakterden önceki son boşlukta kes (kelime ortasında kesmesin)
+                cut_point = 30
+                if ' ' in pers_full[:30]:
+                    # Son boşluğu bul
+                    cut_point = pers_full[:30].rfind(' ')
+                
+                pers_text_line1 = pers_full[:cut_point]
+                pers_text_line2 = pers_full[cut_point:60].strip()  # 2. satıra max 30 karakter daha
+        
+        # Renk bilgisini kısalt ve temizle
+        color = str(data.get('Renk', ''))
+        color_short = ''
+        color_lower = color.lower()
+        
+        if 'yellow' in color_lower or 'sari' in color_lower or 'sarı' in color_lower:
+            color_short = 'SARI'
+        elif 'rose' in color_lower or 'pembe' in color_lower:
+            color_short = 'ROSE'
+        elif 'white' in color_lower or 'beyaz' in color_lower:
+            if 'matte' in color_lower or 'mat' in color_lower:
+                color_short = 'MAT BEYAZ'
+            else:
+                color_short = 'BEYAZ'
+        else:
+            color_short = turkce_to_ascii(color[:10])
+        
         coklu_label = ' (COKLU SIPARIS)' if coklu else ''
         rows = [
             ('Magaza', str(data.get('Mağaza', 'CPQ')) + coklu_label),
             ('Siparis No', str(data['Sipariş No'])),
             ('Musteri Adi', turkce_to_ascii(str(data['Müşteri'])[:25])),
             ('Genislik', str(data['Genişlik'])),
-            ('Model', turkce_to_ascii(f"{data['Model']} {data['Renk']}".strip())),
+            ('Renk', color_short),  # YENİ SATIR!
+            ('Model', turkce_to_ascii(str(data['Model']))),
             ('Olcu', str(data['Ölçü'])),
-            ('Lazer', pers_text)
+            ('Lazer', pers_text_line1),  # 1. satır
         ]
+        # 2. lazer satırını ekle (eğer varsa)
+        if pers_text_line2:
+            rows.append(('', pers_text_line2))
 
     value_x = x + 1.7 * cm
     max_value_w = width - 1.7 * cm - 0.1 * cm
@@ -425,8 +561,7 @@ def draw_label(c, x, y, width, height, data):
         c.drawString(text_x, row_y, label)
 
         val_str = str(value)
-        if label == 'Lazer' and val_str:
-            # Metni sığdıracak font boyutunu bul
+        if (label == 'Lazer' or label == '') and val_str:
             val_font = font_size - 1
             c.setFont("Helvetica", val_font)
             while val_font > 4 and c.stringWidth(val_str, "Helvetica", val_font) > max_value_w:
@@ -534,12 +669,40 @@ def draw_lazer_label(c, x, y, width, height, data):
 
 
 def create_uretim_listesi(orders_df):
+    """Üretim listesi TXT oluşturur - Ondalık ölçüler ve akıllı sıralama"""
+    # YENİLEME siparişlerini hariç tut
     production = orders_df[orders_df['Model'] != 'YENİLEME'].copy()
-    output = "Üretim Listesi\n==============\n\n"
-    output += f"{'Genişlik':<10}{'Model':<15}{'Ölçü':<15}\n"
-    output += f"{'-'*9} {'-'*14} {'-'*14}\n"
-    for _, row in production.iterrows():
-        output += f"{row['Genişlik']:<10}{row['Model']:<15}{row['Ölçü']:<15}\n"
+    
+    if len(production) == 0:
+        return "Üretim gerektiren sipariş yok."
+    
+    # Ölçüleri ondalık sisteme çevir
+    production['Ölçü_Ondalık'] = production['Ölçü'].apply(convert_size_to_decimal)
+    
+    # Sıralama için yardımcı sütunlar ekle
+    production['Model_Öncelik'] = production['Model'].apply(get_model_priority)
+    production['Genişlik_Sayısal'] = production['Genişlik'].apply(get_width_numeric)
+    
+    # Sıralama: 1. Model önceliği, 2. Genişlik (küçükten büyüğe), 3. Ölçü
+    production_sorted = production.sort_values(
+        by=['Model_Öncelik', 'Genişlik_Sayısal', 'Ölçü_Ondalık'],
+        ascending=[True, True, True]
+    )
+    
+    # Başlık
+    output = "Üretim Listesi\n"
+    output += "==============\n\n"
+    output += f"{'Genişlik':<10}{'Model':<15}{'Ölçü (Ondalık)':<20}\n"
+    output += f"{'-'*9} {'-'*14} {'-'*19}\n"
+    
+    # Siparişleri yazdır
+    for idx, row in production_sorted.iterrows():
+        genislik = str(row['Genişlik'])
+        model = str(row['Model'])
+        olcu_ondalik = str(row['Ölçü_Ondalık'])
+        
+        output += f"{genislik:<10}{model:<15}{olcu_ondalik:<20}\n"
+    
     return output
 
 
@@ -630,7 +793,6 @@ def create_kontrol_listesi(orders_df, store_name=''):
             '[ ]'
         ]
 
-        # Genişlik, Renk veya Model eksikse kalın yaz
         eksik = (
             not str(row['Genişlik']).strip() or
             not str(row['Renk']).strip() or
@@ -1038,7 +1200,7 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666;">
-    <b>🏭 Sipariş Takip Sistemi v1.3</b><br>
-    CSV + XLSX → PDF Etiket + Lazer Etiketi + Üretim + Kişiselleştirme + Kontrol PDF
+    <b>🏭 Sipariş Takip Sistemi v2.0</b><br>
+    CSV + XLSX → PDF Etiket (8 Satır) + Lazer + Üretim (Sıralı) + Kişiselleştirme + Kontrol
 </div>
 """, unsafe_allow_html=True)
