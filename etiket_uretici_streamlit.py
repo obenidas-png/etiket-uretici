@@ -154,7 +154,14 @@ def fetch_pending_orders_api():
             if not orders:
                 break
 
-            # status=4 olanları filtrele (string veya int olabilir)
+            # İlk sayfada status dağılımını göster
+            if page == 1:
+                from collections import Counter
+                dist = Counter(str(o.get("status","?")) for o in orders)
+                st.caption(f"Sayfa 1 status dağılımı: {dict(dist)}")
+                st.caption(f"Örnek sipariş alanları: {list(orders[0].keys())[:10]}")
+
+            # status=4 olanları filtrele (string veya int her iki formatta)
             pending = [o for o in orders if str(o.get("status", "")) == "4"]
             all_pending.extend(pending)
 
