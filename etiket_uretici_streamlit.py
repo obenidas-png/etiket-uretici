@@ -79,11 +79,14 @@ SHIPENTEGRA_API_BASE = "https://api.shipentegra.com/v1"
 def get_api_credentials():
     """secrets.toml'dan API key ve secret döndürür. (key, secret) tuple."""
     try:
-        key = st.secrets["shipentegra"]["722038cdbc7271ec9dfeb9b35e53dd7b"]
-        secret = st.secrets["shipentegra"].get("2a73b7851d5b51ca737c2d9c0262b7dc58bbacd4", None)
-        return key, secret
+        key = st.secrets["shipentegra"]["api_key"]
     except Exception:
         return None, None
+    try:
+        secret = st.secrets["shipentegra"]["api_secret"]
+    except Exception:
+        secret = None
+    return key, secret
 
 
 def build_auth_headers(api_key: str, api_secret: str | None) -> dict:
@@ -1050,6 +1053,9 @@ with tab1:
         api_key_mevcut = get_api_credentials()[0] is not None
         if not api_key_mevcut:
             st.warning("API anahtarı bulunamadı. secrets.toml dosyasına `[shipentegra]` `api_key` ekleyin.")
+        else:
+            k, s = get_api_credentials()
+            st.caption(f"🔑 Key: `{k[:6]}...` | Secret: `{'var' if s else 'yok'}`")
 
         col_btn, col_info2 = st.columns([2, 3])
         with col_btn:
