@@ -147,10 +147,19 @@ def fetch_pending_orders_api():
                 return None
 
             data = resp.json()
-            orders = data.get("orders", [])
+            # Debug: ilk sayfada yanıt yapısını göster
+            if page == 1:
+                st.caption(f"API yanıtı (ham): `{str(data)[:300]}`")
+            # Yanıt data.orders veya data.data.orders formatında gelebilir
+            inner = data.get("data", data)
+            if isinstance(inner, dict):
+                orders = inner.get("orders", [])
+                total_pages = inner.get("totalPages", data.get("totalPages", 1))
+            else:
+                orders = []
+                total_pages = 1
             all_orders.extend(orders)
 
-            total_pages = data.get("totalPages", 1)
             if page >= total_pages or not orders:
                 break
             page += 1
