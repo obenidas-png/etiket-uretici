@@ -124,6 +124,8 @@ def fetch_pending_orders_api():
         st.error("ShipEntegra token alınamadı. clientId ve clientSecret'ı kontrol edin.")
         return None
 
+    st.caption(f"Token alındı: {token[:20]}...")
+
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -140,20 +142,21 @@ def fetch_pending_orders_api():
                 params={"status": 2, "page": page, "limit": limit},
                 timeout=15,
             )
+            st.caption(f"GET /orders → {resp.status_code} | page={page}")
             if resp.status_code == 401:
                 st.error("Token geçersiz veya süresi dolmuş (401).")
                 return None
             if resp.status_code != 200:
-                st.error(f"API hatası: {resp.status_code} — {resp.text[:200]}")
+                st.error(f"API hatası: {resp.status_code} — {resp.text[:300]}")
                 return None
 
             data = resp.json()
             inner = data.get("data", {})
             orders = inner.get("orders", [])
             total_count = inner.get("count", 0)
+            st.caption(f"Sayfa {page}: {len(orders)} sipariş, toplam count={total_count}")
             all_orders.extend(orders)
 
-            # Sonraki sayfa var mı?
             if len(all_orders) >= total_count or not orders:
                 break
             page += 1
