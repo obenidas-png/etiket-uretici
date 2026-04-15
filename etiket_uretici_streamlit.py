@@ -137,7 +137,7 @@ def fetch_pending_orders_api():
             resp = requests.get(
                 f"{SHIPENTEGRA_API_BASE}/orders",
                 headers=headers,
-                params={"status": 0, "page": page, "limit": limit},  # 0 = tüm siparişler
+                params={"page": page, "limit": limit},  # status filtresi yok — tümünü çek
                 timeout=15,
             )
             if resp.status_code == 401:
