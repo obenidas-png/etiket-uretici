@@ -174,58 +174,38 @@ def fetch_pending_orders_api():
 
 def api_orders_to_df(orders: list) -> pd.DataFrame:
     """
-    ShipEntegra REST API yanıtındaki sipariş listesini
-    parse_csv() ile uyumlu formata dönüştürür.
-    Alan adları: orderId, buyer_name, ship_to_*, items[].name, items[].options[]
+    ShipEntegra API yanıtını (hem MCP hem REST aynı format)
+    xlsx_to_standard_df çıktısıyla birebir aynı formata çevirir.
+    Sipariş yapısı: number, storeName, shipTo.name, items[].name, items[].options[]
     """
     rows = []
     for o in orders:
-        # Alıcı bilgisi — REST API'de farklı alan adları
-        buyer = (
-            o.get("buyer_name") or
-            o.get("buyerName") or
-            o.get("ship_to_name") or
-            o.get("shipToName") or
-            o.get("name") or ""
-        )
-        store = o.get("storeName") or o.get("store_name") or "Chepniq"
-        order_no = str(o.get("number") or o.get("orderId") or o.get("sso_id") or "")
-        gift_msg = str(o.get("giftMessage") or o.get("gift_message") or "")
+        store   = str(o.get("storeName") or "Chepniq")
+        order_no = str(o.get("number") or o.get("id") or "")
+        buyer   = str((o.get("shipTo") or {}).get("name") or "")
+        gift_msg = str(o.get("giftMessage") or "")
 
-        items = o.get("items") or []
-        if not items:
-            # Bazı yanıtlarda ürün bilgisi doğrudan sipariş içinde
-            product_name = str(o.get("content") or o.get("description") or "")
-            options_raw = o.get("options") or []
-            opts = {op["name"]: op["value"] for op in options_raw if isinstance(op, dict)}
-            ozellikler_parts = [f"Ad:{k},Değer:{v}" for k, v in opts.items()]
+        for item in (o.get("items") or []):
+            options = item.get("options") or []
+            # options: [{"name": "Ring size", "value": "5 1/4 US"}, ...]
+            # xlsx_to_standard_df formatına çevir: "Ad:Ring size,Değer:5 1/4 US,Ad:Width,..."
+            ozellikler_parts = []
+            for op in options:
+                if isinstance(op, dict) and op.get("name") and op.get("value") is not None:
+                    ozellikler_parts.append(f"Ad:{op['name']},Değer:{op['value']}")
+            ozellikler = ",".join(ozellikler_parts) if ozellikler_parts else None
+
             rows.append({
                 "MagazaAdı":       store,
                 "SiparişNumarası": order_no,
                 "Alıcı":           buyer,
-                "ÜrünAdı":         product_name,
-                "Özellikler":      ",".join(ozellikler_parts) or None,
+                "ÜrünAdı":         str(item.get("name") or ""),
+                "Özellikler":      ozellikler,
                 "_BuyerNote":      "",
                 "_GiftMessage":    gift_msg,
                 "_ShipBy":         "",
                 "_OrderTotal":     o.get("totalPrice") or 0,
             })
-        else:
-            for item in items:
-                options_raw = item.get("options") or []
-                opts = {op["name"]: op["value"] for op in options_raw if isinstance(op, dict)}
-                ozellikler_parts = [f"Ad:{k},Değer:{v}" for k, v in opts.items()]
-                rows.append({
-                    "MagazaAdı":       store,
-                    "SiparişNumarası": order_no,
-                    "Alıcı":           buyer,
-                    "ÜrünAdı":         str(item.get("name") or item.get("title") or ""),
-                    "Özellikler":      ",".join(ozellikler_parts) or None,
-                    "_BuyerNote":      str(item.get("buyerNote") or ""),
-                    "_GiftMessage":    gift_msg,
-                    "_ShipBy":         "",
-                    "_OrderTotal":     o.get("totalPrice") or 0,
-                })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
