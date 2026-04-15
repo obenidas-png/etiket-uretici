@@ -124,8 +124,6 @@ def fetch_pending_orders_api():
         st.error("ShipEntegra token alınamadı. clientId ve clientSecret'ı kontrol edin.")
         return None
 
-    st.caption(f"Token alındı: {token[:20]}...")
-
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -142,7 +140,6 @@ def fetch_pending_orders_api():
                 params={"status": 2, "page": page, "limit": limit},
                 timeout=15,
             )
-            st.caption(f"GET /orders → {resp.status_code} | page={page}")
             if resp.status_code == 401:
                 st.error("Token geçersiz veya süresi dolmuş (401).")
                 return None
@@ -154,7 +151,6 @@ def fetch_pending_orders_api():
             inner = data.get("data", {})
             orders = inner.get("orders", [])
             total_count = inner.get("count", 0)
-            st.caption(f"Sayfa {page}: {len(orders)} sipariş, toplam count={total_count}")
             all_orders.extend(orders)
 
             if len(all_orders) >= total_count or not orders:
@@ -1077,17 +1073,19 @@ with tab1:
                 st.success(f"✅ {n} satır hazır — aşağıda çıktı alın")
 
         if fetch_btn:
+            # Önceki tüm çıktıları temizle
+            for k in list(st.session_state.keys()):
+                if "api" in k:
+                    st.session_state.pop(k, None)
             with st.spinner("ShipEntegra API'den bekleyen siparişler çekiliyor..."):
                 api_df = fetch_pending_orders_api()
             if api_df is not None and not api_df.empty:
                 st.session_state["api_df"] = api_df
                 st.session_state["api_df_ready"] = True
                 st.session_state["api_row_count"] = len(api_df)
-                # Önceki çıktıları temizle (yeni veri geldi)
-                for k in list(st.session_state.keys()):
-                    if k.endswith("_api"):
-                        st.session_state.pop(k, None)
                 st.rerun()
+            elif api_df is not None and api_df.empty:
+                st.warning("API'den sipariş gelmedi.")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
