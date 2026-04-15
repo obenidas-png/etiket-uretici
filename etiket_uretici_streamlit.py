@@ -128,17 +128,17 @@ def fetch_pending_orders_api():
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
-    all_orders = []
+    all_pending = []
     page = 1
-    limit = 20
+    limit = 100  # max al, istemci tarafında filtrele
 
     try:
         while True:
             resp = requests.get(
                 f"{SHIPENTEGRA_API_BASE}/orders",
                 headers=headers,
-                params={"page": page, "limit": limit},  # status filtresi yok — tümünü çek
-                timeout=15,
+                params={"page": page, "limit": limit},
+                timeout=30,
             )
             if resp.status_code == 401:
                 st.error("Token geçersiz veya süresi dolmuş (401).")
@@ -150,11 +150,16 @@ def fetch_pending_orders_api():
             data = resp.json()
             inner = data.get("data", {})
             orders = inner.get("orders", [])
-            total_count = inner.get("count", 0)
-            st.caption(f"Sayfa {page}: {len(orders)} sipariş | count={total_count} | statüsler: {list(set(o.get('status') for o in orders))}")
-            all_orders.extend(orders)
 
-            if len(all_orders) >= total_count or not orders:
+            if not orders:
+                break
+
+            # status=4 olanları filtrele (string veya int olabilir)
+            pending = [o for o in orders if str(o.get("status", "")) == "4"]
+            all_pending.extend(pending)
+
+            # Tam sayfa geldiyse sonraki sayfaya geç
+            if len(orders) < limit:
                 break
             page += 1
 
@@ -165,11 +170,11 @@ def fetch_pending_orders_api():
         st.error(f"API bağlantı hatası: {e}")
         return None
 
-    if not all_orders:
-        st.warning("API'de bekleyen sipariş bulunamadı.")
+    if not all_pending:
+        st.warning("Bekleyen (status=4) sipariş bulunamadı.")
         return pd.DataFrame()
 
-    return api_orders_to_df(all_orders)
+    return api_orders_to_df(all_pending)
 
 
 def api_orders_to_df(orders: list) -> pd.DataFrame:
