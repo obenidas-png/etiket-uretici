@@ -154,17 +154,9 @@ def fetch_pending_orders_api():
             if not orders:
                 break
 
-            # İlk sayfada tam veri yapısını göster
-            if page == 1:
-                from collections import Counter
-                dist = Counter(str(o.get("status","?")) for o in orders)
-                st.caption(f"Sayfa 1 status dağılımı: {dict(dist)}")
-                # status=4 olan ilk siparişin tüm alanları
-                s4 = next((o for o in orders if str(o.get("status","")) == "4"), orders[0])
-                st.caption(f"Tüm alanlar: {dict(s4)}")
-
-            # status=4 olanları filtrele (string veya int her iki formatta)
-            pending = [o for o in orders if str(o.get("status", "")) == "4"]
+            # status=4 (my_status=4) olanları filtrele
+            # Bu endpoint'te status ve my_status alanları var, ikisini de kontrol et
+            pending = [o for o in orders if str(o.get("status", "")) == "4" or str(o.get("my_status", "")) == "4"]
             all_pending.extend(pending)
 
             # Tam sayfa geldiyse sonraki sayfaya geç
@@ -188,38 +180,43 @@ def fetch_pending_orders_api():
 
 def api_orders_to_df(orders: list) -> pd.DataFrame:
     """
-    ShipEntegra API yanıtını (hem MCP hem REST aynı format)
-    xlsx_to_standard_df çıktısıyla birebir aynı formata çevirir.
-    Sipariş yapısı: number, storeName, shipTo.name, items[].name, items[].options[]
+    ShipEntegra REST API item-bazlı yanıtını parse_csv() uyumlu formata çevirir.
+    Alan adları: ship_to_name, name, order_id, variations, gift_message, store_id
+    variations formatı: [[{"name":"Ring size","value":"8 US"}, ...]]
     """
     rows = []
     for o in orders:
-        store   = str(o.get("storeName") or "Chepniq")
-        order_no = str(o.get("number") or o.get("id") or "")
-        buyer   = str((o.get("shipTo") or {}).get("name") or "")
-        gift_msg = str(o.get("giftMessage") or "")
+        order_no = str(o.get("order_id") or o.get("marketplaceOrderId") or o.get("orderId") or "")
+        buyer    = str(o.get("ship_to_name") or "")
+        product  = str(o.get("name") or o.get("title") or "")
+        gift_msg = str(o.get("gift_message") or "")
+        store_id = o.get("store_id")
+        # store_id 928170 = Chepniq (diğer mağaza id'leri gerekirse eklenebilir)
+        store = "Chepniq"
 
-        for item in (o.get("items") or []):
-            options = item.get("options") or []
-            # options: [{"name": "Ring size", "value": "5 1/4 US"}, ...]
-            # xlsx_to_standard_df formatına çevir: "Ad:Ring size,Değer:5 1/4 US,Ad:Width,..."
-            ozellikler_parts = []
-            for op in options:
-                if isinstance(op, dict) and op.get("name") and op.get("value") is not None:
-                    ozellikler_parts.append(f"Ad:{op['name']},Değer:{op['value']}")
-            ozellikler = ",".join(ozellikler_parts) if ozellikler_parts else None
+        # variations: [[{"name":"Ring size","value":"8 US"},{"name":"Width","value":"4mm"}]]
+        variations_raw = o.get("variations") or []
+        opts = {}
+        for var_group in variations_raw:
+            if isinstance(var_group, list):
+                for v in var_group:
+                    if isinstance(v, dict) and v.get("name") and v.get("value") is not None:
+                        opts[v["name"]] = str(v["value"])
 
-            rows.append({
-                "MagazaAdı":       store,
-                "SiparişNumarası": order_no,
-                "Alıcı":           buyer,
-                "ÜrünAdı":         str(item.get("name") or ""),
-                "Özellikler":      ozellikler,
-                "_BuyerNote":      "",
-                "_GiftMessage":    gift_msg,
-                "_ShipBy":         "",
-                "_OrderTotal":     o.get("totalPrice") or 0,
-            })
+        ozellikler_parts = [f"Ad:{k},Değer:{v}" for k, v in opts.items()]
+        ozellikler = ",".join(ozellikler_parts) if ozellikler_parts else None
+
+        rows.append({
+            "MagazaAdı":       store,
+            "SiparişNumarası": order_no,
+            "Alıcı":           buyer,
+            "ÜrünAdı":         product,
+            "Özellikler":      ozellikler,
+            "_BuyerNote":      str(o.get("customer_note") or ""),
+            "_GiftMessage":    gift_msg,
+            "_ShipBy":         str(o.get("ship_by_date") or ""),
+            "_OrderTotal":     o.get("total_price") or 0,
+        })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
