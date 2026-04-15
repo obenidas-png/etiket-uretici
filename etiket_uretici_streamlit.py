@@ -130,13 +130,14 @@ def fetch_pending_orders_api():
     }
     all_orders = []
     page = 1
+    limit = 20
 
     try:
         while True:
             resp = requests.get(
                 f"{SHIPENTEGRA_API_BASE}/orders",
                 headers=headers,
-                params={"status": 2, "page": page, "limit": 20},
+                params={"status": 2, "page": page, "limit": limit},
                 timeout=15,
             )
             if resp.status_code == 401:
@@ -147,25 +148,18 @@ def fetch_pending_orders_api():
                 return None
 
             data = resp.json()
-            # Debug: ilk sayfada yanıt yapısını göster
-            if page == 1:
-                st.caption(f"API yanıtı (ham): `{str(data)[:300]}`")
-            # Yanıt data.orders veya data.data.orders formatında gelebilir
-            inner = data.get("data", data)
-            if isinstance(inner, dict):
-                orders = inner.get("orders", [])
-                total_pages = inner.get("totalPages", data.get("totalPages", 1))
-            else:
-                orders = []
-                total_pages = 1
+            inner = data.get("data", {})
+            orders = inner.get("orders", [])
+            total_count = inner.get("count", 0)
             all_orders.extend(orders)
 
-            if page >= total_pages or not orders:
+            # Sonraki sayfa var mı?
+            if len(all_orders) >= total_count or not orders:
                 break
             page += 1
 
     except requests.exceptions.Timeout:
-        st.error("API isteği zaman aşımına uğradı. Bağlantınızı kontrol edin.")
+        st.error("API isteği zaman aşımına uğradı.")
         return None
     except requests.exceptions.RequestException as e:
         st.error(f"API bağlantı hatası: {e}")
@@ -175,40 +169,63 @@ def fetch_pending_orders_api():
         st.warning("API'de bekleyen sipariş bulunamadı.")
         return pd.DataFrame()
 
-    # ShipEntegra API yanıtını standard df formatına çevir
     return api_orders_to_df(all_orders)
 
 
 def api_orders_to_df(orders: list) -> pd.DataFrame:
     """
-    ShipEntegra API'den gelen ham sipariş listesini,
-    xlsx_to_standard_df çıktısıyla aynı formata dönüştürür.
-    parse_csv() bu formatta çalışır — değişiklik gerekmez.
+    ShipEntegra REST API yanıtındaki sipariş listesini
+    parse_csv() ile uyumlu formata dönüştürür.
+    Alan adları: orderId, buyer_name, ship_to_*, items[].name, items[].options[]
     """
     rows = []
     for o in orders:
-        ship_to = o.get("shipTo") or {}
-        for item in o.get("items", []):
-            options = item.get("options") or []
-            opts = {op["name"]: op["value"] for op in options}
+        # Alıcı bilgisi — REST API'de farklı alan adları
+        buyer = (
+            o.get("buyer_name") or
+            o.get("buyerName") or
+            o.get("ship_to_name") or
+            o.get("shipToName") or
+            o.get("name") or ""
+        )
+        store = o.get("storeName") or o.get("store_name") or "Chepniq"
+        order_no = str(o.get("number") or o.get("orderId") or o.get("sso_id") or "")
+        gift_msg = str(o.get("giftMessage") or o.get("gift_message") or "")
 
-            # Özellikler sütununu mevcut parse_csv regex'ine uygun formatta oluştur
-            ozellikler_parts = []
-            for k, v in opts.items():
-                ozellikler_parts.append(f"Ad:{k},Değer:{v}")
-            ozellikler = ",".join(ozellikler_parts) if ozellikler_parts else None
-
+        items = o.get("items") or []
+        if not items:
+            # Bazı yanıtlarda ürün bilgisi doğrudan sipariş içinde
+            product_name = str(o.get("content") or o.get("description") or "")
+            options_raw = o.get("options") or []
+            opts = {op["name"]: op["value"] for op in options_raw if isinstance(op, dict)}
+            ozellikler_parts = [f"Ad:{k},Değer:{v}" for k, v in opts.items()]
             rows.append({
-                "MagazaAdı":       o.get("storeName", "Chepniq"),
-                "SiparişNumarası": str(o.get("number", "")),
-                "Alıcı":           ship_to.get("name", ""),
-                "ÜrünAdı":         item.get("name", ""),
-                "Özellikler":      ozellikler,
+                "MagazaAdı":       store,
+                "SiparişNumarası": order_no,
+                "Alıcı":           buyer,
+                "ÜrünAdı":         product_name,
+                "Özellikler":      ",".join(ozellikler_parts) or None,
                 "_BuyerNote":      "",
-                "_GiftMessage":    str(o.get("giftMessage") or ""),
+                "_GiftMessage":    gift_msg,
                 "_ShipBy":         "",
-                "_OrderTotal":     o.get("totalPrice", 0),
+                "_OrderTotal":     o.get("totalPrice") or 0,
             })
+        else:
+            for item in items:
+                options_raw = item.get("options") or []
+                opts = {op["name"]: op["value"] for op in options_raw if isinstance(op, dict)}
+                ozellikler_parts = [f"Ad:{k},Değer:{v}" for k, v in opts.items()]
+                rows.append({
+                    "MagazaAdı":       store,
+                    "SiparişNumarası": order_no,
+                    "Alıcı":           buyer,
+                    "ÜrünAdı":         str(item.get("name") or item.get("title") or ""),
+                    "Özellikler":      ",".join(ozellikler_parts) or None,
+                    "_BuyerNote":      str(item.get("buyerNote") or ""),
+                    "_GiftMessage":    gift_msg,
+                    "_ShipBy":         "",
+                    "_OrderTotal":     o.get("totalPrice") or 0,
+                })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
