@@ -89,31 +89,22 @@ def get_api_credentials():
     return key, secret
 
 
-def build_auth_headers(api_key: str, api_secret: str | None) -> dict:
+def get_bearer_token(client_id: str, client_secret: str) -> str | None:
     """
-    ShipEntegra authentication header'larını oluşturur.
-
-    Deneme sırası:
-      1. api_secret varsa → HTTP Basic Auth (Base64 "key:secret")
-         Bu yöntem ShipStation v1 stili API'lerde yaygındır.
-      2. api_secret yoksa → X-API-Key header'ı
-
-    Eğer bu yöntemler çalışmazsa aşağıdaki satırları güncelleyin:
-      - Bearer token için: {"Authorization": f"Bearer {api_key}"}
-      - Ayrı header'lar için: {"X-API-Key": api_key, "X-API-Secret": api_secret}
+    POST /auth/token ile clientId + clientSecret gönderir, accessToken döner.
+    Hata durumunda None döner.
     """
-    import base64
-    if api_secret:
-        token = base64.b64encode(f"{api_key}:{api_secret}".encode()).decode()
-        return {
-            "Authorization": f"Basic {token}",
-            "Content-Type": "application/json",
-        }
-    else:
-        return {
-            "X-API-Key": api_key,
-            "Content-Type": "application/json",
-        }
+    try:
+        resp = requests.post(
+            f"{SHIPENTEGRA_API_BASE}/auth/token",
+            json={"clientId": client_id, "clientSecret": client_secret},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            return resp.json()["data"]["accessToken"]
+        return None
+    except Exception:
+        return None
 
 
 def fetch_pending_orders_api():
@@ -122,25 +113,34 @@ def fetch_pending_orders_api():
     Tüm sayfaları dolaşır, standard DataFrame formatına dönüştürür.
     Hata durumunda None döner ve Streamlit'e hata mesajı yazar.
     """
-    api_key, api_secret = get_api_credentials()
-    if not api_key:
+    client_id, client_secret = get_api_credentials()
+    if not client_id:
         st.error("ShipEntegra API anahtarı bulunamadı. secrets.toml dosyasına [shipentegra] api_key ekleyin.")
         return None
 
-    headers = build_auth_headers(api_key, api_secret)
+    # Önce token al
+    token = get_bearer_token(client_id, client_secret)
+    if not token:
+        st.error("ShipEntegra token alınamadı. clientId ve clientSecret'ı kontrol edin.")
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
     all_orders = []
     page = 1
 
     try:
         while True:
             resp = requests.get(
-                f"{SHIPENTEGRA_API_BASE}/orders",
+                f"{SHIPENTEGRA_API_BASE}/orders/manual",
                 headers=headers,
                 params={"status": 4, "page": page, "limit": 20},
                 timeout=15,
             )
             if resp.status_code == 401:
-                st.error("API anahtarı geçersiz veya yetkisiz erişim (401).")
+                st.error("Token geçersiz veya süresi dolmuş (401).")
                 return None
             if resp.status_code != 200:
                 st.error(f"API hatası: {resp.status_code} — {resp.text[:200]}")
@@ -1053,9 +1053,6 @@ with tab1:
         api_key_mevcut = get_api_credentials()[0] is not None
         if not api_key_mevcut:
             st.warning("API anahtarı bulunamadı. secrets.toml dosyasına `[shipentegra]` `api_key` ekleyin.")
-        else:
-            k, s = get_api_credentials()
-            st.caption(f"🔑 Key: `{k[:6]}...` | Secret: `{'var' if s else 'yok'}`")
 
         col_btn, col_info2 = st.columns([2, 3])
         with col_btn:
