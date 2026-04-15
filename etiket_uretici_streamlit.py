@@ -134,9 +134,9 @@ def fetch_pending_orders_api():
     try:
         while True:
             resp = requests.get(
-                f"{SHIPENTEGRA_API_BASE}/orders/manual",
+                f"{SHIPENTEGRA_API_BASE}/orders",
                 headers=headers,
-                params={"status": 4, "page": page, "limit": 20},
+                params={"status": 2, "page": page, "limit": 20},
                 timeout=15,
             )
             if resp.status_code == 401:
