@@ -1,7 +1,7 @@
 """
 ETSY ATÖLYE YÖNETİM SİSTEMİ - Streamlit Uygulaması
 CSV veya XLSX Yükle → PDF Etiket + 3 TXT Listesi Oluştur
-ShipEntegra API entegrasyonu: Chepniq mağazası otomatik çekilir
+CHEPNIQ mağazası otomatik çekilir. Dosya yüklemeye gerek yok.
 """
 
 import streamlit as st
