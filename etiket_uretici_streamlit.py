@@ -137,7 +137,7 @@ def fetch_pending_orders_api():
             resp = requests.get(
                 f"{SHIPENTEGRA_API_BASE}/orders",
                 headers=headers,
-                params={"status": 2, "page": page, "limit": limit},
+                params={"status": 0, "page": page, "limit": limit},  # 0 = tüm siparişler
                 timeout=15,
             )
             if resp.status_code == 401:
@@ -151,6 +151,7 @@ def fetch_pending_orders_api():
             inner = data.get("data", {})
             orders = inner.get("orders", [])
             total_count = inner.get("count", 0)
+            st.caption(f"Sayfa {page}: {len(orders)} sipariş | count={total_count} | statüsler: {list(set(o.get('status') for o in orders))}")
             all_orders.extend(orders)
 
             if len(all_orders) >= total_count or not orders:
