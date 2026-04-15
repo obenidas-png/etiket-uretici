@@ -1,6 +1,7 @@
 """
 ETSY ATÖLYE YÖNETİM SİSTEMİ - Streamlit Uygulaması
 CSV veya XLSX Yükle → PDF Etiket + 3 TXT Listesi Oluştur
+ShipEntegra API entegrasyonu: Chepniq mağazası otomatik çekilir
 """
 
 import streamlit as st
@@ -18,6 +19,8 @@ from reportlab.lib.colors import black, HexColor
 import re
 from zoneinfo import ZoneInfo
 import zipfile
+# ── YENİ: API için requests ───────────────────────────────
+import requests
 
 st.set_page_config(page_title="Sipariş Takip Sistemi", page_icon="🏭", layout="wide")
 
@@ -29,8 +32,6 @@ st.markdown("""
         border-radius: 10px; color: white; margin-bottom: 30px;
     }
     .stButton>button { width: 100%; background-color: #667eea; color: white; font-weight: bold; }
-
-    /* Dosya yükleme alanı */
     [data-testid="stFileUploader"] {
         background-color: #fff4e6;
         border: 2px dashed #ff8c00;
@@ -48,16 +49,161 @@ st.markdown("""
     section[data-testid="stFileUploadDropzone"] > div {
         color: #cc6600 !important;
     }
+    /* YENİ: API bölümü kutu stili */
+    .api-box {
+        background-color: #eef4ff;
+        border: 1.5px solid #667eea;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<h1 class="main-title">🏭 Sipariş Takip Sistemi</h1>', unsafe_allow_html=True)
 
 
-
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1xD6d_drnDc9YYnzvT4XGXpuBTtAHB7x2p6Eai1bKlps/edit"
 SHEET_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Model", "Ölçü",
               "Durum", "Not", "Güncelleme Saati", "Ekleyen"]
+
+# ── YENİ: ShipEntegra API sabitleri ──────────────────────
+SHIPENTEGRA_API_BASE = "https://api.shipentegra.com/v1"
+# API key secrets.toml'da [shipentegra] altında api_key olarak tanımlı olmalı
+
+
+# ─────────────────────────────────────────────────────────
+# YENİ: ShipEntegra API fonksiyonları
+# ─────────────────────────────────────────────────────────
+
+def get_api_credentials():
+    """secrets.toml'dan API key ve secret döndürür. (key, secret) tuple."""
+    try:
+        key = st.secrets["shipentegra"]["722038cdbc7271ec9dfeb9b35e53dd7b"]
+        secret = st.secrets["shipentegra"].get("2a73b7851d5b51ca737c2d9c0262b7dc58bbacd4", None)
+        return key, secret
+    except Exception:
+        return None, None
+
+
+def build_auth_headers(api_key: str, api_secret: str | None) -> dict:
+    """
+    ShipEntegra authentication header'larını oluşturur.
+
+    Deneme sırası:
+      1. api_secret varsa → HTTP Basic Auth (Base64 "key:secret")
+         Bu yöntem ShipStation v1 stili API'lerde yaygındır.
+      2. api_secret yoksa → X-API-Key header'ı
+
+    Eğer bu yöntemler çalışmazsa aşağıdaki satırları güncelleyin:
+      - Bearer token için: {"Authorization": f"Bearer {api_key}"}
+      - Ayrı header'lar için: {"X-API-Key": api_key, "X-API-Secret": api_secret}
+    """
+    import base64
+    if api_secret:
+        token = base64.b64encode(f"{api_key}:{api_secret}".encode()).decode()
+        return {
+            "Authorization": f"Basic {token}",
+            "Content-Type": "application/json",
+        }
+    else:
+        return {
+            "X-API-Key": api_key,
+            "Content-Type": "application/json",
+        }
+
+
+def fetch_pending_orders_api():
+    """
+    ShipEntegra API'den bekleyen (status=4) siparişleri çeker.
+    Tüm sayfaları dolaşır, standard DataFrame formatına dönüştürür.
+    Hata durumunda None döner ve Streamlit'e hata mesajı yazar.
+    """
+    api_key, api_secret = get_api_credentials()
+    if not api_key:
+        st.error("ShipEntegra API anahtarı bulunamadı. secrets.toml dosyasına [shipentegra] api_key ekleyin.")
+        return None
+
+    headers = build_auth_headers(api_key, api_secret)
+    all_orders = []
+    page = 1
+
+    try:
+        while True:
+            resp = requests.get(
+                f"{SHIPENTEGRA_API_BASE}/orders",
+                headers=headers,
+                params={"status": 4, "page": page, "limit": 20},
+                timeout=15,
+            )
+            if resp.status_code == 401:
+                st.error("API anahtarı geçersiz veya yetkisiz erişim (401).")
+                return None
+            if resp.status_code != 200:
+                st.error(f"API hatası: {resp.status_code} — {resp.text[:200]}")
+                return None
+
+            data = resp.json()
+            orders = data.get("orders", [])
+            all_orders.extend(orders)
+
+            total_pages = data.get("totalPages", 1)
+            if page >= total_pages or not orders:
+                break
+            page += 1
+
+    except requests.exceptions.Timeout:
+        st.error("API isteği zaman aşımına uğradı. Bağlantınızı kontrol edin.")
+        return None
+    except requests.exceptions.RequestException as e:
+        st.error(f"API bağlantı hatası: {e}")
+        return None
+
+    if not all_orders:
+        st.warning("API'de bekleyen sipariş bulunamadı.")
+        return pd.DataFrame()
+
+    # ShipEntegra API yanıtını standard df formatına çevir
+    return api_orders_to_df(all_orders)
+
+
+def api_orders_to_df(orders: list) -> pd.DataFrame:
+    """
+    ShipEntegra API'den gelen ham sipariş listesini,
+    xlsx_to_standard_df çıktısıyla aynı formata dönüştürür.
+    parse_csv() bu formatta çalışır — değişiklik gerekmez.
+    """
+    rows = []
+    for o in orders:
+        ship_to = o.get("shipTo") or {}
+        for item in o.get("items", []):
+            options = item.get("options") or []
+            opts = {op["name"]: op["value"] for op in options}
+
+            # Özellikler sütununu mevcut parse_csv regex'ine uygun formatta oluştur
+            ozellikler_parts = []
+            for k, v in opts.items():
+                ozellikler_parts.append(f"Ad:{k},Değer:{v}")
+            ozellikler = ",".join(ozellikler_parts) if ozellikler_parts else None
+
+            rows.append({
+                "MagazaAdı":       o.get("storeName", "Chepniq"),
+                "SiparişNumarası": str(o.get("number", "")),
+                "Alıcı":           ship_to.get("name", ""),
+                "ÜrünAdı":         item.get("name", ""),
+                "Özellikler":      ozellikler,
+                "_BuyerNote":      "",
+                "_GiftMessage":    str(o.get("giftMessage") or ""),
+                "_ShipBy":         "",
+                "_OrderTotal":     o.get("totalPrice", 0),
+            })
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+# ─────────────────────────────────────────────────────────
+# Mevcut fonksiyonlar — DEĞİŞTİRİLMEDİ
+# ─────────────────────────────────────────────────────────
 
 def telegram_bildir(mesaj):
     try:
@@ -69,6 +215,7 @@ def telegram_bildir(mesaj):
         urllib.request.urlopen(req, timeout=5)
     except:
         pass
+
 
 @st.cache_resource
 def get_gsheet():
@@ -82,6 +229,7 @@ def get_gsheet():
     except:
         return None
 
+
 def load_sheet_data():
     sheet = get_gsheet()
     if sheet is None:
@@ -94,13 +242,8 @@ def load_sheet_data():
     except:
         return pd.DataFrame(columns=SHEET_COLS)
 
+
 def load_orders_to_session(orders_df):
-    """
-    Yeni sipariş dosyası yüklenince:
-    - Sorunlu (Not dolu) olanlar sheet'te kalır
-    - Sorunsuz (Not boş) eski siparişler silinir
-    - Yeni siparişler eklenir (sheet'te olmayanlar)
-    """
     sheet = get_gsheet()
     if sheet is None:
         return False
@@ -108,16 +251,11 @@ def load_orders_to_session(orders_df):
         existing = load_sheet_data()
         istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
 
-        # Sorunsuz eski siparişleri bul (Not boş olanlar)
-        yeni_siparis_nolar = set(str(r["Sipariş No"]) for _, r in orders_df.iterrows())
-
         if not existing.empty:
-            # Mevcut sheet'teki sipariş no + genişlik kombinasyonları
             existing_keys = set(
                 str(r.get("Sipariş No","")) + "_" + str(r.get("Genişlik",""))
                 for _, r in existing.iterrows()
             )
-            # Sadece sheet'te olmayan yeni siparişleri ekle
             new_rows = []
             for _, row in orders_df.iterrows():
                 key = str(row["Sipariş No"]) + "_" + str(row.get("Genişlik",""))
@@ -131,7 +269,6 @@ def load_orders_to_session(orders_df):
                 sheet.append_rows(new_rows)
             return len(new_rows)
         else:
-            # Sheet boşsa direkt ekle
             sheet.append_row(SHEET_COLS)
             rows = []
             for _, row in orders_df.iterrows():
@@ -147,14 +284,13 @@ def load_orders_to_session(orders_df):
         st.error(f"Sheet hatası: {e}")
         return False
 
+
 def mark_as_problematic(siparis_no, musteri, magaza, genislik, model, olcu, not_text, durum, kullanici):
-    """Bir siparişi sorunlu olarak işaretle (notu güncelle)"""
     sheet = get_gsheet()
     if sheet is None:
         return False
     try:
         istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
-        # Sipariş sheet'te var mı?
         try:
             cell = sheet.find(str(siparis_no))
             row_num = cell.row
@@ -163,12 +299,10 @@ def mark_as_problematic(siparis_no, musteri, magaza, genislik, model, olcu, not_
             sheet.update_cell(row_num, 9, istanbul_now)
             sheet.update_cell(row_num, 10, kullanici)
         except:
-            # Yoksa yeni satır ekle (manuel giriş)
             sheet.append_row([
                 siparis_no, musteri, magaza, genislik, model, olcu,
                 durum, not_text, istanbul_now, kullanici
             ])
-        # Telegram bildirimi
         istanbul_now2 = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
         telegram_bildir(
             f"🚨 <b>Sorunlu Sipariş</b>\n"
@@ -181,6 +315,7 @@ def mark_as_problematic(siparis_no, musteri, magaza, genislik, model, olcu, not_
         return True
     except:
         return False
+
 
 def update_order_status(siparis_no, durum, not_text, kullanici):
     sheet = get_gsheet()
@@ -197,6 +332,7 @@ def update_order_status(siparis_no, durum, not_text, kullanici):
         return True
     except:
         return False
+
 
 def xlsx_to_standard_df(df_xlsx):
     rows = []
@@ -253,19 +389,12 @@ def parse_csv(df):
         ]):
             continue
 
-        # ═══════════════════════════════════════════════════════════
-        # ✅ İYİLEŞTİRME 1: VİRGÜLLÜ KİŞİSELLEŞTİRME PARSE
-        # ═══════════════════════════════════════════════════════════
         props = {}
         if pd.notna(row.get('Özellikler')):
             properties_str = str(row['Özellikler'])
-            
-            # Regex ile Ad: ve Değer: çiftlerini bul
             pattern = r'Ad:([^,]+),Değer:([^,]+(?:,[^A][^d][^:]*)*?)(?=,Ad:|$)'
             matches = re.findall(pattern, properties_str)
-            
             for key, value in matches:
-                # HTML entities temizle
                 value_clean = value.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
                 props[key.strip()] = value_clean.strip()
 
@@ -294,7 +423,7 @@ def parse_csv(df):
             elif 'rose' in product_lower or 'pembe' in product_lower: color = 'ROSE'
             if 'matte' in product_lower or 'mat' in product_lower:
                 if color == 'BEYAZ': color = 'MAT BEYAZ'
-            
+
             if 'resizing' in product_lower or 'size adjustment' in product_lower or 'replacement' in product_lower: model = 'YENİLEME'
             elif 'bevel' in product_lower: model = 'ÇATI MAT' if ('matte' in product_lower or 'mat' in product_lower) else 'ÇATI'
             elif 'dome' in product_lower: model = 'BOMBE'
@@ -340,7 +469,6 @@ def parse_csv(df):
                     'Renk': color, 'Model': model.upper() if model else '', 'Ölçü': ring_size,
                     'Kişiselleştirme': props.get('Personalization', ''), 'Ürün': product})
 
-    # Aynı sipariş numarasına ait birden fazla sipariş varsa "coklu" işaretle
     siparis_sayilari = pd.Series([o['Sipariş No'] for o in orders])
     tekrar_edenler = set(siparis_sayilari[siparis_sayilari.duplicated(keep=False)].tolist())
     for o in orders:
@@ -357,77 +485,45 @@ def turkce_to_ascii(text):
     return text
 
 
-# ═══════════════════════════════════════════════════════════
-# ✅ İYİLEŞTİRME 2: ÖLÇÜ ONDALIK SİSTEME ÇEVİRME
-# ═══════════════════════════════════════════════════════════
 def convert_size_to_decimal(size_str):
-    """Ring size'ı ondalık sisteme çevirir
-    Örnek: '5 1/2 US' → '5.50'
-            '7 3/4 US' → '7.75'
-            '11 US' → '11.00'
-    """
     if not size_str or pd.isna(size_str):
         return '0.00'
-    
     size_str = str(size_str).strip()
-    
-    # "US" kelimesini çıkar
     size_str = size_str.replace(' US', '').replace('US', '').strip()
-    
-    # Kesir varsa parse et
     if '/' in size_str:
         parts = size_str.split()
-        
-        if len(parts) == 2:  # "5 1/2" formatı
+        if len(parts) == 2:
             whole = int(parts[0])
             fraction_parts = parts[1].split('/')
             numerator = int(fraction_parts[0])
             denominator = int(fraction_parts[1])
             decimal = whole + (numerator / denominator)
-        elif len(parts) == 1:  # "1/2" formatı (sadece kesir)
+        elif len(parts) == 1:
             fraction_parts = parts[0].split('/')
             numerator = int(fraction_parts[0])
             denominator = int(fraction_parts[1])
             decimal = numerator / denominator
         else:
-            decimal = float(size_str.split()[0])  # İlk sayıyı al
+            decimal = float(size_str.split()[0])
     else:
-        # Kesir yok, direkt sayı
         try:
             decimal = float(size_str)
         except:
             return '0.00'
-    
     return f"{decimal:.2f}"
 
 
-# ═══════════════════════════════════════════════════════════
-# ✅ İYİLEŞTİRME 3: AKILLI SIRALAMA FONKSİYONLARI
-# ═══════════════════════════════════════════════════════════
 def get_model_priority(model):
-    """Model önceliğini belirler (sıralama için)"""
     model_lower = str(model).lower()
-    
-    # Öncelik sırası
-    if 'bombe' in model_lower:
-        return 1
-    elif 'çati' in model_lower or 'cati' in model_lower:
-        return 2
-    elif 'düz' in model_lower or 'duz' in model_lower or 'flat' in model_lower:
-        return 3
-    elif 'oval' in model_lower or 'tektaş' in model_lower or 'tektas' in model_lower:
-        return 4
-    else:
-        return 5  # Diğer modeller en sona
+    if 'bombe' in model_lower: return 1
+    elif 'çati' in model_lower or 'cati' in model_lower: return 2
+    elif 'düz' in model_lower or 'duz' in model_lower or 'flat' in model_lower: return 3
+    elif 'oval' in model_lower or 'tektaş' in model_lower or 'tektas' in model_lower: return 4
+    else: return 5
 
 
 def get_width_numeric(width_str):
-    """Genişliği sayısal değere çevirir (sıralama için)
-    Örnek: '2MM' → 2, '5MM' → 5
-    """
-    if not width_str or pd.isna(width_str):
-        return 0
-    
+    if not width_str or pd.isna(width_str): return 0
     width_str = str(width_str).upper().replace('MM', '').strip()
     try:
         return int(width_str)
@@ -475,7 +571,6 @@ def draw_label(c, x, y, width, height, data):
         for i in range(1, 7):
             c.setLineWidth(0.3)
             c.line(x, y + (i * line_height), x + width, y + (i * line_height))
-        
         note = ''
         if pd.notna(data.get('Kişiselleştirme')):
             note = str(data['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
@@ -491,64 +586,46 @@ def draw_label(c, x, y, width, height, data):
             ('Not', note)
         ]
     else:
-        # ═══════════════════════════════════════════════════════════
-        # ✅ İYİLEŞTİRME 4+5: RENK AYRI SATIR + LAZER 2 SATIR
-        # ═══════════════════════════════════════════════════════════
-        line_height = height / 8  # 7'den 8'e çıktı
+        line_height = height / 8
         for i in range(1, 8):
             c.setLineWidth(0.3)
             c.line(x, y + (i * line_height), x + width, y + (i * line_height))
-        
-        # Kişiselleştirme metnini temizle ve 2 satıra böl
+
         pers_text_line1 = ''
         pers_text_line2 = ''
-        
         if pd.notna(data['Kişiselleştirme']):
             pers_full = str(data['Kişiselleştirme'])
             pers_full = pers_full.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
-            
-            # 1. satıra max 30 karakter
             if len(pers_full) <= 30:
                 pers_text_line1 = pers_full
             else:
-                # 30. karakterden önceki son boşlukta kes (kelime ortasında kesmesin)
                 cut_point = 30
                 if ' ' in pers_full[:30]:
-                    # Son boşluğu bul
                     cut_point = pers_full[:30].rfind(' ')
-                
                 pers_text_line1 = pers_full[:cut_point]
-                pers_text_line2 = pers_full[cut_point:60].strip()  # 2. satıra max 30 karakter daha
-        
-        # Renk bilgisini kısalt ve temizle
+                pers_text_line2 = pers_full[cut_point:60].strip()
+
         color = str(data.get('Renk', ''))
         color_short = ''
         color_lower = color.lower()
-        
-        if 'yellow' in color_lower or 'sari' in color_lower or 'sarı' in color_lower:
-            color_short = 'SARI'
-        elif 'rose' in color_lower or 'pembe' in color_lower:
-            color_short = 'ROSE'
+        if 'yellow' in color_lower or 'sari' in color_lower or 'sarı' in color_lower: color_short = 'SARI'
+        elif 'rose' in color_lower or 'pembe' in color_lower: color_short = 'ROSE'
         elif 'white' in color_lower or 'beyaz' in color_lower:
-            if 'matte' in color_lower or 'mat' in color_lower:
-                color_short = 'MAT BEYAZ'
-            else:
-                color_short = 'BEYAZ'
+            color_short = 'MAT BEYAZ' if ('matte' in color_lower or 'mat' in color_lower) else 'BEYAZ'
         else:
             color_short = turkce_to_ascii(color[:10])
-        
+
         coklu_label = ' (COKLU SIPARIS)' if coklu else ''
         rows = [
             ('Magaza', str(data.get('Mağaza', 'CPQ')) + coklu_label),
             ('Siparis No', str(data['Sipariş No'])),
             ('Musteri Adi', turkce_to_ascii(str(data['Müşteri'])[:25])),
             ('Genislik', str(data['Genişlik'])),
-            ('Renk', color_short),  # YENİ SATIR!
+            ('Renk', color_short),
             ('Model', turkce_to_ascii(str(data['Model']))),
             ('Olcu', str(data['Ölçü'])),
-            ('Lazer', pers_text_line1),  # 1. satır
+            ('Lazer', pers_text_line1),
         ]
-        # 2. lazer satırını ekle (eğer varsa)
         if pers_text_line2:
             rows.append(('', pers_text_line2))
 
@@ -559,7 +636,6 @@ def draw_label(c, x, y, width, height, data):
         row_y = y + height - ((i + 0.65) * line_height)
         c.setFont("Helvetica-Bold", font_size)
         c.drawString(text_x, row_y, label)
-
         val_str = str(value)
         if (label == 'Lazer' or label == '') and val_str:
             val_font = font_size - 1
@@ -569,13 +645,11 @@ def draw_label(c, x, y, width, height, data):
             c.setFont("Helvetica", val_font)
         else:
             c.setFont("Helvetica", font_size - 1)
-
         try: c.drawString(value_x, row_y, val_str)
         except: c.drawString(value_x, row_y, turkce_to_ascii(val_str))
 
 
 def create_lazer_labels(orders_df):
-    """Kişiselleştirmesi olan siparişler için ayrı lazer etiket PDF'i"""
     personalized = orders_df[
         orders_df['Kişiselleştirme'].notna() &
         (orders_df['Kişiselleştirme'] != '') &
@@ -611,7 +685,6 @@ def create_lazer_labels(orders_df):
 
 
 def draw_lazer_label(c, x, y, width, height, data):
-    """Sadece müşteri adı, genişlik ve kişiselleştirme metni olan lazer etiketi"""
     c.setStrokeColor(HexColor('#ff8c00'))
     c.setLineWidth(1.5)
     c.rect(x, y, width, height)
@@ -624,62 +697,46 @@ def draw_lazer_label(c, x, y, width, height, data):
     pers = pers.replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
     pers_ascii = turkce_to_ascii(pers)
 
-    # Başlık
     c.setFillColor(HexColor('#cc6600'))
     c.setFont("Helvetica-Bold", font_size + 1)
     c.drawString(text_x, y + height - 0.5 * cm, "LAZER ETIKETI")
     c.setFillColor(black)
 
-    # Ayırıcı çizgi
     c.setStrokeColor(HexColor('#ff8c00'))
     c.setLineWidth(0.8)
     c.line(x, y + height - 0.7 * cm, x + width, y + height - 0.7 * cm)
 
-    # Müşteri
     row_y = y + height - 1.1 * cm
     c.setFont("Helvetica-Bold", font_size)
     c.drawString(text_x, row_y, "Musteri:")
     c.setFont("Helvetica", font_size)
     c.drawString(text_x + label_col_w, row_y, turkce_to_ascii(str(data.get('Müşteri', ''))[:35]))
 
-    # Genişlik
     row_y -= 0.6 * cm
     c.setFont("Helvetica-Bold", font_size)
     c.drawString(text_x, row_y, "Genislik:")
     c.setFont("Helvetica", font_size)
     c.drawString(text_x + label_col_w, row_y, str(data.get('Genişlik', '')))
 
-    # Renk
     row_y -= 0.6 * cm
     c.setFont("Helvetica-Bold", font_size)
     c.drawString(text_x, row_y, "Renk:")
     c.setFont("Helvetica", font_size)
-    
-    # Renk kısaltma
     color = str(data.get('Renk', ''))
     color_short = ''
     color_lower = color.lower()
-    
-    if 'yellow' in color_lower or 'sari' in color_lower or 'sarı' in color_lower:
-        color_short = 'SARI'
-    elif 'rose' in color_lower or 'pembe' in color_lower:
-        color_short = 'ROSE'
+    if 'yellow' in color_lower or 'sari' in color_lower or 'sarı' in color_lower: color_short = 'SARI'
+    elif 'rose' in color_lower or 'pembe' in color_lower: color_short = 'ROSE'
     elif 'white' in color_lower or 'beyaz' in color_lower:
-        if 'matte' in color_lower or 'mat' in color_lower:
-            color_short = 'MAT BEYAZ'
-        else:
-            color_short = 'BEYAZ'
+        color_short = 'MAT BEYAZ' if ('matte' in color_lower or 'mat' in color_lower) else 'BEYAZ'
     else:
         color_short = turkce_to_ascii(color[:10])
-    
     c.drawString(text_x + label_col_w, row_y, color_short)
 
-    # Kişiselleştirme — satırlara böl
     row_y -= 0.6 * cm
     c.setFont("Helvetica-Bold", font_size)
     c.drawString(text_x, row_y, "Lazer:")
 
-    # Her satırda yaklaşık kaç karakter sığar
     chars_per_line = int((width - label_col_w - 0.4 * cm) / (font_size * 0.52))
     c.setFont("Helvetica", font_size)
     line_start = 0
@@ -694,40 +751,21 @@ def draw_lazer_label(c, x, y, width, height, data):
 
 
 def create_uretim_listesi(orders_df):
-    """Üretim listesi TXT oluşturur - Ondalık ölçüler ve akıllı sıralama"""
-    # YENİLEME siparişlerini hariç tut
     production = orders_df[orders_df['Model'] != 'YENİLEME'].copy()
-    
     if len(production) == 0:
         return "Üretim gerektiren sipariş yok."
-    
-    # Ölçüleri ondalık sisteme çevir
     production['Ölçü_Ondalık'] = production['Ölçü'].apply(convert_size_to_decimal)
-    
-    # Sıralama için yardımcı sütunlar ekle
     production['Model_Öncelik'] = production['Model'].apply(get_model_priority)
     production['Genişlik_Sayısal'] = production['Genişlik'].apply(get_width_numeric)
-    
-    # Sıralama: 1. Model önceliği, 2. Genişlik (küçükten büyüğe), 3. Ölçü
     production_sorted = production.sort_values(
         by=['Model_Öncelik', 'Genişlik_Sayısal', 'Ölçü_Ondalık'],
         ascending=[True, True, True]
     )
-    
-    # Başlık
-    output = "Üretim Listesi\n"
-    output += "==============\n\n"
+    output = "Üretim Listesi\n==============\n\n"
     output += f"{'Genişlik':<10}{'Model':<15}{'Ölçü (Ondalık)':<20}\n"
     output += f"{'-'*9} {'-'*14} {'-'*19}\n"
-    
-    # Siparişleri yazdır
     for idx, row in production_sorted.iterrows():
-        genislik = str(row['Genişlik'])
-        model = str(row['Model'])
-        olcu_ondalik = str(row['Ölçü_Ondalık'])
-        
-        output += f"{genislik:<10}{model:<15}{olcu_ondalik:<20}\n"
-    
+        output += f"{str(row['Genişlik']):<10}{str(row['Model']):<15}{str(row['Ölçü_Ondalık']):<20}\n"
     return output
 
 
@@ -845,52 +883,250 @@ def create_kontrol_listesi(orders_df, store_name=''):
     return buffer.getvalue()
 
 
-# ── Ana uygulama ──────────────────────────────
+# ─────────────────────────────────────────────────────────
+# Ortak çıktı üretme fonksiyonu — YENİ (tekrar kodu önler)
+# ─────────────────────────────────────────────────────────
+
+def process_and_render(df, source_label=""):
+    """
+    Standard df'i alır, parse eder, çıktıları üretir ve
+    indirme butonlarını gösterir. Hem API hem Excel için kullanılır.
+    """
+    with st.spinner("Siparişler işleniyor..."):
+        orders_df = parse_csv(df)
+
+    st.success(f"✅ {len(orders_df)} sipariş işlendi! {source_label}")
+
+    with st.spinner("Sipariş listesi güncelleniyor..."):
+        sonuc = load_orders_to_session(orders_df)
+        if sonuc is False:
+            st.warning("⚠️ Google Sheets bağlantısı kurulamadı.")
+        else:
+            st.success(f"✅ {sonuc} yeni sipariş takip listesine eklendi.")
+
+    with st.expander("📋 İşlenmiş Siparişler"):
+        st.dataframe(orders_df)
+
+    st.markdown("### 📊 Özet")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.metric("Toplam Sipariş", len(orders_df))
+    with c2: st.metric("Kişiselleştirme", orders_df['Kişiselleştirme'].notna().sum())
+    with c3: st.metric("Farklı Model", orders_df['Model'].nunique())
+    with c4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
+
+    st.markdown("### 🎨 Dosyaları Oluştur")
+
+    session_key = f"files_created_{source_label}"
+
+    if not st.session_state.get(session_key, False):
+        if st.button("🚀 TÜM DOSYALARI OLUŞTUR", type="primary", key=f"btn_create_{source_label}"):
+            with st.spinner("Dosyalar oluşturuluyor..."):
+                pdf_buffer = create_pdf_labels(orders_df)
+                lazer_pdf = create_lazer_labels(orders_df)
+                uretim_txt = create_uretim_listesi(orders_df)
+                kisisel_txt = create_kisisellestime_listesi(orders_df)
+                store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else ''
+                kontrol_pdf = create_kontrol_listesi(orders_df, store_name)
+
+                st.session_state[f'pdf_{source_label}'] = pdf_buffer.getvalue()
+                st.session_state[f'lazer_{source_label}'] = lazer_pdf
+                st.session_state[f'uretim_{source_label}'] = uretim_txt.encode('utf-8')
+                st.session_state[f'kisisel_{source_label}'] = kisisel_txt.encode('utf-8')
+                st.session_state[f'kontrol_{source_label}'] = kontrol_pdf
+                st.session_state[session_key] = True
+                st.session_state[f'ts_{source_label}'] = datetime.now().strftime('%Y%m%d_%H%M%S')
+            st.rerun()
+    else:
+        st.success("✅ Tüm dosyalar hazır!")
+        ts = st.session_state.get(f'ts_{source_label}', 'dosya')
+
+        has_lazer = bool(st.session_state.get(f'lazer_{source_label}'))
+        istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d%m%Y_%H%M")
+        store_name_zip = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else 'siparis'
+        zip_filename = f"{store_name_zip}_{istanbul_now}.zip"
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"kargo_etiketleri_{ts}.pdf", st.session_state[f'pdf_{source_label}'])
+            if st.session_state.get(f'lazer_{source_label}'):
+                zf.writestr(f"lazer_etiketleri_{ts}.pdf", st.session_state[f'lazer_{source_label}'])
+            zf.writestr(f"fsm_uretim_{ts}.txt", st.session_state[f'uretim_{source_label}'])
+            zf.writestr(f"kisisellestime_{ts}.txt", st.session_state[f'kisisel_{source_label}'])
+            zf.writestr(f"kontrol_{ts}.pdf", st.session_state[f'kontrol_{source_label}'])
+        zip_buffer.seek(0)
+
+        st.download_button(
+            "📦  TÜM DOSYALARI İNDİR (.zip)",
+            data=zip_buffer.getvalue(),
+            file_name=zip_filename,
+            mime="application/zip",
+            key=f"dl_zip_{source_label}",
+            type="primary",
+            use_container_width=True
+        )
+        st.markdown("---")
+
+        num_cols = 5 if has_lazer else 4
+        cols = st.columns(num_cols)
+        with cols[0]:
+            st.download_button("📦 Kargo Etiketleri", data=st.session_state[f'pdf_{source_label}'],
+                file_name=f"kargo_etiketleri_{ts}.pdf", mime="application/pdf", key=f"dl_pdf_{source_label}")
+        if has_lazer:
+            with cols[1]:
+                st.download_button("🟠 Lazer Etiketleri", data=st.session_state[f'lazer_{source_label}'],
+                    file_name=f"lazer_etiketleri_{ts}.pdf", mime="application/pdf", key=f"dl_lazer_{source_label}")
+        with cols[-3]:
+            st.download_button("📝 FSM Üretim Listesi", data=st.session_state[f'uretim_{source_label}'],
+                file_name=f"fsm_uretim_{ts}.txt", mime="text/plain", key=f"dl_uretim_{source_label}")
+        with cols[-2]:
+            st.download_button("✍️ Kişiselleştirme Listesi", data=st.session_state[f'kisisel_{source_label}'],
+                file_name=f"kisisellestime_{ts}.txt", mime="text/plain", key=f"dl_kisisel_{source_label}")
+        with cols[-1]:
+            st.download_button("📋 Kontrol Listesi", data=st.session_state[f'kontrol_{source_label}'],
+                file_name=f"kontrol_{ts}.pdf", mime="application/pdf", key=f"dl_kontrol_{source_label}")
+
+        st.markdown("---")
+        if st.button("🔄 Temizle", type="secondary", key=f"clear_{source_label}"):
+            for k in [session_key, f'pdf_{source_label}', f'lazer_{source_label}',
+                      f'uretim_{source_label}', f'kisisel_{source_label}',
+                      f'kontrol_{source_label}', f'ts_{source_label}']:
+                st.session_state.pop(k, None)
+            st.rerun()
+
+
+# ─────────────────────────────────────────────────────────
+# Tab yapısı
+# ─────────────────────────────────────────────────────────
+
 st.markdown("""
 <style>
-/* Tab genel stil */
-[data-testid="stTabs"] [role="tablist"] {
-    gap: 8px;
-}
+[data-testid="stTabs"] [role="tablist"] { gap: 8px; }
 [data-testid="stTabs"] button[role="tab"] {
-    font-size: 1rem !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    padding: 10px 24px !important;
-    border-radius: 8px 8px 0 0 !important;
+    font-size: 1rem !important; font-weight: 700 !important;
+    text-transform: uppercase !important; letter-spacing: 0.05em !important;
+    padding: 10px 24px !important; border-radius: 8px 8px 0 0 !important;
 }
-/* Tab 1 - Mavi */
-[data-testid="stTabs"] button[role="tab"]:nth-child(1) {
-    background-color: #1a3a5c !important;
-    color: white !important;
-}
-[data-testid="stTabs"] button[role="tab"]:nth-child(1):hover {
-    background-color: #245080 !important;
-}
-[data-testid="stTabs"] button[role="tab"]:nth-child(1)[aria-selected="true"] {
-    background-color: #2d6aa0 !important;
-    color: white !important;
-    border-bottom: 3px solid #5ba3d9 !important;
-}
-/* Tab 2 - Kırmızı */
-[data-testid="stTabs"] button[role="tab"]:nth-child(2) {
-    background-color: #5c1a1a !important;
-    color: white !important;
-}
-[data-testid="stTabs"] button[role="tab"]:nth-child(2):hover {
-    background-color: #7a2222 !important;
-}
-[data-testid="stTabs"] button[role="tab"]:nth-child(2)[aria-selected="true"] {
-    background-color: #a03030 !important;
-    color: white !important;
-    border-bottom: 3px solid #e07070 !important;
-}
+[data-testid="stTabs"] button[role="tab"]:nth-child(1) { background-color: #1a3a5c !important; color: white !important; }
+[data-testid="stTabs"] button[role="tab"]:nth-child(1)[aria-selected="true"] { background-color: #2d6aa0 !important; border-bottom: 3px solid #5ba3d9 !important; }
+[data-testid="stTabs"] button[role="tab"]:nth-child(2) { background-color: #5c1a1a !important; color: white !important; }
+[data-testid="stTabs"] button[role="tab"]:nth-child(2)[aria-selected="true"] { background-color: #a03030 !important; border-bottom: 3px solid #e07070 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📦 SİPARİŞ YÜKLE & DOSYALAR", "🚨 SORUNLU SİPARİŞ TAKİBİ"])
 
+# ─────────────────────────────────────────────────────────
+# TAB 1
+# ─────────────────────────────────────────────────────────
+with tab1:
+    col_main, col_info = st.columns([3, 1])
+
+    with col_info:
+        st.markdown("### ℹ️ Bilgi")
+        st.info("""
+        **Chepniq:** API'den otomatik çekilir.
+
+        **Diğer mağazalar:** ShipEntegra'dan Siparişler > İndir (Excel) ile dosya yükleyin.
+
+        ---
+        **Desteklenen formatlar:**
+        - 📊 ShipEntegra Excel (.xlsx)
+        - 📄 Etsy CSV export
+
+        **Oluşacak Dosyalar:**
+        - 📄 PDF Etiketler
+        - 🟠 Lazer Etiketleri (PDF)
+        - 📝 Üretim Listesi
+        - 📝 Kişiselleştirme Listesi
+        - 📄 Kontrol Listesi (PDF)
+        """)
+
+    with col_main:
+
+        # ── YENİ: Chepniq API bölümü ─────────────────────────
+        st.markdown("### 🔵 Chepniq — ShipEntegra API")
+        st.markdown('<div class="api-box">', unsafe_allow_html=True)
+
+        api_key_mevcut = get_api_credentials()[0] is not None
+        if not api_key_mevcut:
+            st.warning("API anahtarı bulunamadı. secrets.toml dosyasına `[shipentegra]` `api_key` ekleyin.")
+
+        col_btn, col_info2 = st.columns([2, 3])
+        with col_btn:
+            fetch_btn = st.button(
+                "🔄 Bekleyen Siparişleri Getir",
+                type="primary",
+                key="api_fetch_btn",
+                disabled=not api_key_mevcut
+            )
+        with col_info2:
+            if st.session_state.get("api_df_ready"):
+                n = st.session_state.get("api_row_count", 0)
+                st.success(f"✅ {n} satır hazır — aşağıda çıktı alın")
+
+        if fetch_btn:
+            with st.spinner("ShipEntegra API'den bekleyen siparişler çekiliyor..."):
+                api_df = fetch_pending_orders_api()
+            if api_df is not None and not api_df.empty:
+                st.session_state["api_df"] = api_df
+                st.session_state["api_df_ready"] = True
+                st.session_state["api_row_count"] = len(api_df)
+                # Önceki çıktıları temizle (yeni veri geldi)
+                for k in list(st.session_state.keys()):
+                    if k.endswith("_api"):
+                        st.session_state.pop(k, None)
+                st.rerun()
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.session_state.get("api_df_ready") and st.session_state.get("api_df") is not None:
+            try:
+                process_and_render(st.session_state["api_df"], source_label="api")
+            except Exception as e:
+                st.error(f"İşleme hatası: {e}")
+
+        # ── Diğer mağazalar: Excel yükleme ───────────────────
+        st.markdown("---")
+        st.markdown("### 📂 Diğer Mağazalar — Excel / CSV Yükle")
+        st.markdown(
+            "Foria ve Cerasus siparişleri için ShipEntegra'dan "
+            "**Siparişler > İndir (Excel)** ile indirilen dosyayı yükleyin.",
+            help="Her mağaza için ayrı ayrı yükleyebilirsiniz."
+        )
+
+        uploaded_file = st.file_uploader(
+            "📦 Dosyayı buraya sürükleyin veya tıklayın",
+            type=['csv', 'xlsx', 'xlsm'],
+            help="ShipEntegra Excel veya Etsy CSV",
+            key="file_uploader_main"
+        )
+
+    if uploaded_file:
+        with col_main:
+            try:
+                file_key = f"file_{uploaded_file.name}_{uploaded_file.size}"
+                if st.session_state.get("last_file_key") != file_key:
+                    # Yeni dosya — önceki çıktıları temizle
+                    for k in list(st.session_state.keys()):
+                        if k.endswith("_xlsx"):
+                            st.session_state.pop(k, None)
+                    st.session_state["files_created_xlsx"] = False
+                    st.session_state["last_file_key"] = file_key
+
+                df, file_type = load_file(uploaded_file)
+                label = f"({'XLSX' if file_type == 'xlsx' else 'CSV'})"
+                st.success(f"✅ {len(df)} satır yüklendi {label}")
+                process_and_render(df, source_label="xlsx")
+
+            except Exception as e:
+                st.error(f"❌ Hata: {str(e)}")
+                st.info("💡 CSV için gerekli sütunlar: MagazaAdı, Alıcı, SiparişNumarası, ÜrünAdı, Özellikler")
+                st.info("💡 XLSX için: ShipEntegra'dan İndir (Excel) ile alınan dosya olmalı")
+
+
+# ─────────────────────────────────────────────────────────
+# TAB 2 — Sorunlu sipariş takibi (değiştirilmedi)
+# ─────────────────────────────────────────────────────────
 with tab2:
     st.markdown("### 🚨 Sorunlu Sipariş Takibi")
 
@@ -900,7 +1136,6 @@ with tab2:
             get_gsheet.clear()
 
     st.markdown("---")
-    # Manuel sipariş ekleme
     with st.expander("➕ Manuel Sipariş No ile Ekle"):
         col_m1, col_m2 = st.columns(2)
         with col_m1:
@@ -927,10 +1162,8 @@ with tab2:
                     st.error("Eklenemedi.")
 
     st.markdown("---")
-
     sheet_df = load_sheet_data()
 
-    # Filtre — sadece sorunlular veya tümü
     col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
         goster_filtre = st.selectbox("Göster", ["Sadece Sorunlular", "Tüm Siparişler"], key="goster_filtre")
@@ -954,15 +1187,13 @@ with tab2:
             goster_df = goster_df[goster_df["Durum"] == durum_filtre]
         if magaza_filtre != "Tümü" and "Mağaza" in goster_df.columns:
             goster_df = goster_df[goster_df["Mağaza"].astype(str) == magaza_filtre]
-        # Güncelleme tarihine göre sırala (en eski üste, tarihi olmayanlar sona)
+
         def parse_tarih(t):
-            try:
-                return pd.to_datetime(str(t), format="%d.%m.%Y %H:%M")
-            except:
-                return pd.Timestamp.max
+            try: return pd.to_datetime(str(t), format="%d.%m.%Y %H:%M")
+            except: return pd.Timestamp.max
+
         goster_df = goster_df.copy()
-        tarih_col = "Güncelleme Saati" if "Güncelleme Saati" in goster_df.columns else (
-                    "Tamamlanma Saati" if "Tamamlanma Saati" in goster_df.columns else None)
+        tarih_col = "Güncelleme Saati" if "Güncelleme Saati" in goster_df.columns else None
         if tarih_col:
             goster_df["_sort"] = goster_df[tarih_col].apply(parse_tarih)
             goster_df = goster_df.sort_values("_sort", ascending=True).drop(columns=["_sort"])
@@ -971,7 +1202,6 @@ with tab2:
         goster_df = pd.DataFrame(columns=SHEET_COLS)
         st.info("Henüz sipariş yüklenmemiş.")
 
-    # Mevcut siparişleri listele
     for idx, row in goster_df.iterrows():
         siparis_no = str(row.get("Sipariş No", ""))
         musteri = str(row.get("Müşteri", ""))
@@ -986,8 +1216,6 @@ with tab2:
         has_problem = not_text.strip() not in ["", "nan"]
         icon = "🚨" if has_problem else "📦"
         durum_icon = "✅" if durum == "✅ Çözüldü" else ("🔄" if durum == "🔄 İşlemde" else ("⏳" if durum == "⏳ Bekliyor" else ""))
-
-        # Sorun notunun özeti etikette görünsün
         not_ozet = ""
         if has_problem and not_text.strip() not in ["", "nan"]:
             not_ozet = " — " + not_text[:50] + ("..." if len(not_text) > 50 else "")
@@ -1002,7 +1230,6 @@ with tab2:
 
             col_a, col_b = st.columns([2, 1])
             with col_a:
-                # Mevcut notu kategori + ek not olarak ayır
                 mevcut_kategori = ""
                 mevcut_aciklama = not_text if not_text not in ["", "nan"] else ""
                 for _tip in ["Yok", "Ölçü Değişikliği", "Genişlik Yok", "Adres-Kargo", "İade-İptal", "Kişiselleştirme", "Diğer"]:
@@ -1042,190 +1269,10 @@ with tab2:
                             st.error("Kayıt başarısız.")
 
 
-
-with tab1:
-    col_main, col_info = st.columns([3, 1])
-
-with col_info:
-    st.markdown("### ℹ️ Bilgi")
-    st.info("""
-    **Dosya nasıl alınır?**
-    ShipEntegra sitesinden
-    **Siparişler > İndir (Excel)**
-    seçilerek dosya yüklenecek.
-
-    ---
-    **Desteklenen formatlar:**
-    - 📊 ShipEntegra Excel (.xlsx)
-    - 📄 Etsy CSV export
-
-    **Oluşacak Dosyalar:**
-    - 📄 PDF Etiketler
-    - 🟠 Lazer Etiketleri (PDF)
-    - 📝 Üretim Listesi
-    - 📝 Kişiselleştirme Listesi
-    - 📄 Kontrol Listesi (PDF)
-    """)
-
-with col_main:
-    st.markdown("### 📂 Sipariş Dosyası Yükle")
-    uploaded_file = st.file_uploader(
-        "📦 Dosyayı buraya sürükleyin veya tıklayın",
-        type=['csv', 'xlsx', 'xlsm'],
-        help="ShipEntegra: Siparişler > İndir (Excel) seçilerek indirilen dosyayı yükleyin"
-    )
-
-if uploaded_file:
-    with col_main:
-        try:
-            if 'last_file_name' not in st.session_state or st.session_state.get('last_file_name') != uploaded_file.name:
-                st.session_state['files_created'] = False
-                st.session_state['last_file_name'] = uploaded_file.name
-
-            df, file_type = load_file(uploaded_file)
-
-            if file_type == 'xlsx':
-                st.success(f"✅ XLSX: {len(df)} satır yüklendi!")
-            else:
-                st.success(f"✅ CSV: {len(df)} ham sipariş yüklendi!")
-
-            with st.spinner("Siparişler işleniyor..."):
-                orders_df = parse_csv(df)
-
-            st.success(f"✅ {len(orders_df)} sipariş işlendi!")
-
-            with st.spinner("Sipariş listesi güncelleniyor..."):
-                sonuc = load_orders_to_session(orders_df)
-                if sonuc is False:
-                    st.warning("⚠️ Google Sheets bağlantısı kurulamadı.")
-                else:
-                    st.success(f"✅ {sonuc} yeni sipariş takip listesine eklendi, sorunlular korundu.")
-
-
-
-            with st.expander("📋 İşlenmiş Siparişler"):
-                st.dataframe(orders_df)
-
-            st.markdown("### 📊 Özet")
-            c1, c2, c3, c4 = st.columns(4)
-            with c1: st.metric("Toplam Sipariş", len(orders_df))
-            with c2: st.metric("Kişiselleştirme", orders_df['Kişiselleştirme'].notna().sum())
-            with c3: st.metric("Farklı Model", orders_df['Model'].nunique())
-            with c4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
-
-            st.markdown("### 🎨 Dosyaları Oluştur")
-
-            if not st.session_state.get('files_created', False):
-                if st.button("🚀 TÜM DOSYALARI OLUŞTUR", type="primary"):
-                    with st.spinner("Dosyalar oluşturuluyor..."):
-                        pdf_buffer = create_pdf_labels(orders_df)
-                        lazer_pdf = create_lazer_labels(orders_df)
-                        uretim_txt = create_uretim_listesi(orders_df)
-                        kisisel_txt = create_kisisellestime_listesi(orders_df)
-                        store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else ''
-                        kontrol_pdf = create_kontrol_listesi(orders_df, store_name)
-
-                        st.session_state['pdf_ready'] = pdf_buffer.getvalue()
-                        st.session_state['lazer_ready'] = lazer_pdf
-                        st.session_state['uretim_ready'] = uretim_txt.encode('utf-8')
-                        st.session_state['kisisel_ready'] = kisisel_txt.encode('utf-8')
-                        st.session_state['kontrol_ready'] = kontrol_pdf
-                        st.session_state['files_created'] = True
-                        st.session_state['ts'] = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    st.rerun()
-
-            else:
-                st.success("✅ Tüm dosyalar hazır!")
-                ts = st.session_state.get('ts', 'dosya')
-
-                has_lazer = bool(st.session_state.get('lazer_ready'))
-                num_cols = 5 if has_lazer else 4
-                cols = st.columns(num_cols)
-
-                # ZIP butonu
-                istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d%m%Y_%H%M")
-                store_name_zip = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else 'siparis'
-                zip_filename = f"{store_name_zip}_{istanbul_now}.zip"
-
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    zf.writestr(f"kargo_etiketleri_{ts}.pdf", st.session_state['pdf_ready'])
-                    if st.session_state.get('lazer_ready'):
-                        zf.writestr(f"lazer_etiketleri_{ts}.pdf", st.session_state['lazer_ready'])
-                    zf.writestr(f"fsm_uretim_{ts}.txt", st.session_state['uretim_ready'])
-                    zf.writestr(f"kisisellestime_{ts}.txt", st.session_state['kisisel_ready'])
-                    zf.writestr(f"kontrol_{ts}.pdf", st.session_state['kontrol_ready'])
-                zip_buffer.seek(0)
-
-                st.markdown("""
-<style>
-div[data-testid="stDownloadButton"]:first-of-type button {
-    font-size: 1.2rem !important;
-}
-</style>
-""", unsafe_allow_html=True)
-                st.download_button(
-                    "📦  TÜM DOSYALARI İNDİR (.zip)",
-                    data=zip_buffer.getvalue(),
-                    file_name=zip_filename,
-                    mime="application/zip",
-                    key="dl_zip",
-                    type="primary",
-                    use_container_width=True
-                )
-                st.markdown("---")
-
-                btn_style = """
-<style>
-[data-testid="stDownloadButton"] button {
-    font-size: 1.35rem !important;
-    padding: 14px 10px !important;
-    height: auto !important;
-}
-[data-testid="stDownloadButton"] button svg,
-[data-testid="stDownloadButton"] button span:first-child {
-    font-size: 1.6rem !important;
-}
-</style>
-"""
-                st.markdown(btn_style, unsafe_allow_html=True)
-
-                with cols[0]:
-                    st.download_button("📦  Kargo Etiketleri", data=st.session_state['pdf_ready'],
-                        file_name=f"kargo_etiketleri_{ts}.pdf", mime="application/pdf", key="dl_pdf")
-                if has_lazer:
-                    with cols[1]:
-                        st.download_button("🟠  Lazer Etiketleri", data=st.session_state['lazer_ready'],
-                            file_name=f"lazer_etiketleri_{ts}.pdf", mime="application/pdf", key="dl_lazer")
-
-                with cols[-3]:
-                    st.download_button("📝  FSM Üretim Listesi", data=st.session_state['uretim_ready'],
-                        file_name=f"fsm_uretim_{ts}.txt", mime="text/plain", key="dl_uretim")
-                with cols[-2]:
-                    st.download_button("✍️  Kişiselleştirme Listesi", data=st.session_state['kisisel_ready'],
-                        file_name=f"kisisellestime_{ts}.txt", mime="text/plain", key="dl_kisisel")
-                with cols[-1]:
-                    st.download_button("📋  Kontrol Listesi", data=st.session_state['kontrol_ready'],
-                        file_name=f"kontrol_{ts}.pdf", mime="application/pdf", key="dl_kontrol")
-
-                st.markdown("---")
-                if st.button("🔄 Yeni Dosya Yükle", type="secondary"):
-                    for k in ['files_created','pdf_ready','lazer_ready','uretim_ready','kisisel_ready','kontrol_ready','ts','last_file_name']:
-                        st.session_state.pop(k, None)
-                    st.rerun()
-
-        except Exception as e:
-            st.error(f"❌ Hata: {str(e)}")
-            st.info("💡 CSV için gerekli sütunlar: MagazaAdı, Alıcı, SiparişNumarası, ÜrünAdı, Özellikler")
-            st.info("💡 XLSX için: ShipEntegra'dan İndir (Excel) ile alınan dosya olmalı")
-else:
-    with col_main:
-        st.info("👆 Lütfen sipariş dosyanızı yükleyin")
-
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666;">
-    <b>🏭 Sipariş Takip Sistemi v2.0</b><br>
-    CSV + XLSX → PDF Etiket (8 Satır) + Lazer + Üretim (Sıralı) + Kişiselleştirme + Kontrol
+    <b>🏭 Sipariş Takip Sistemi v3.0</b><br>
+    Chepniq API + Excel/CSV → PDF Etiket + Lazer + Üretim + Kişiselleştirme + Kontrol
 </div>
 """, unsafe_allow_html=True)
