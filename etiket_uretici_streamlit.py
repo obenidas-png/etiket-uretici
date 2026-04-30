@@ -103,7 +103,7 @@ def get_bearer_token(client_id, client_secret):
 
 def is_valid_order(o):
     order_id = str(o.get("order_id", ""))
-    if order_id.startswith("M9795C-"):
+    if order_id.startswith("M"):
         try:
             ts = int(order_id.split("-")[1])
             order_date = datetime.datetime.fromtimestamp(ts)
