@@ -959,6 +959,9 @@ def process_and_render(df, source_label=""):
             st.success(f"✅ {sonuc} yeni sipariş takip listesine eklendi.")
 
     st.markdown("#### 📋 İşlenmiş Siparişler")
+    st.markdown("""<style>
+    [data-testid="stDataEditor"] td, [data-testid="stDataEditor"] th { font-size: 12px !important; }
+    </style>""", unsafe_allow_html=True)
     st.caption("Tablodaki hücreleri tıklayarak düzenleyebilirsiniz. Düzenledikten sonra o satır için çıktı alabilirsiniz.")
 
     edit_cols = ['Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not']
@@ -972,10 +975,10 @@ def process_and_render(df, source_label=""):
         num_rows="fixed",
         key=f"editor_{source_label}",
         column_config={
-            'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='medium'),
-            'Müşteri':          st.column_config.TextColumn('Müşteri', width='medium'),
-            'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','OVAL TEKTAŞ','YENİLEME',''], width='medium'),
-            'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','ROSE',''], width='medium'),
+            'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
+            'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
+            'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','OVAL TEKTAŞ','YENİLEME',''], width='small'),
+            'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','ROSE',''], width='small'),
             'Genişlik':         st.column_config.SelectboxColumn('Genişlik', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
             'Ölçü':             st.column_config.TextColumn('Ölçü', width='small'),
             'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='large'),
