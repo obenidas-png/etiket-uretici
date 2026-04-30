@@ -749,9 +749,10 @@ def create_uretim_listesi(orders_df):
     if len(production) == 0:
         return "Üretim gerektiren sipariş yok."
     production['Ölçü_Ondalık'] = production['Ölçü'].apply(convert_size_to_decimal)
+    production['Ölçü_Sayısal'] = production['Ölçü_Ondalık'].apply(lambda x: float(x) if x else 0.0)
     production['Model_Öncelik'] = production['Model'].apply(get_model_priority)
     production['Genişlik_Sayısal'] = production['Genişlik'].apply(get_width_numeric)
-    production_sorted = production.sort_values(by=['Model_Öncelik', 'Genişlik_Sayısal', 'Ölçü_Ondalık'])
+    production_sorted = production.sort_values(by=['Model_Öncelik', 'Genişlik_Sayısal', 'Ölçü_Sayısal'])
     output = "Üretim Listesi\n==============\n\n"
     output += f"{'Genişlik':<10}{'Model':<15}{'Ölçü (Ondalık)':<20}\n"
     output += f"{'-'*9} {'-'*14} {'-'*19}\n"
