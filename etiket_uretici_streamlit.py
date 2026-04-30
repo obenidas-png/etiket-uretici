@@ -766,6 +766,31 @@ def create_uretim_listesi(orders_df):
     output += f"{'-'*9} {'-'*14} {'-'*19}\n"
     for _, row in production_sorted.iterrows():
         output += f"{str(row['Genişlik']):<10}{str(row['Model']):<15}{str(row['Ölçü_Ondalık']):<20}\n"
+    # YENİLEME siparişlerini ekle
+    yenileme = orders_df[orders_df['Model'] == 'YENİLEME'].copy()
+    if len(yenileme) > 0:
+        output += "\nYENİLEME SİPARİŞLERİ\n"
+        output += "=====================\n"
+        output += f"{'Ölçü':<20}{'Müşteri'}\n"
+        output += f"{'-'*19} {'-'*24}\n"
+        for _, row in yenileme.iterrows():
+            musteri = str(row.get('Müşteri','')) if str(row.get('Müşteri','')) not in ['','nan','None'] else ''
+            output += f"{str(row.get('Ölçü','')):<20}{musteri}\n"
+
+    output += "\n\n"
+    output += "Üretim Listesi (Kopyalama için - İsimsiz)\n"
+    output += "==========================================\n\n"
+    output += f"{'Genişlik':<10}{'Model':<15}{'Ölçü (Ondalık)':<20}\n"
+    output += f"{'-'*9} {'-'*14} {'-'*19}\n"
+    for _, row in production_sorted.iterrows():
+        output += f"{str(row['Genişlik']):<10}{str(row['Model']):<15}{str(row['Ölçü_Ondalık']):<20}\n"
+    if len(yenileme) > 0:
+        output += "\nYENİLEME SİPARİŞLERİ\n"
+        output += "=====================\n"
+        output += f"{'Ölçü':<20}\n"
+        output += f"{'-'*19}\n"
+        for _, row in yenileme.iterrows():
+            output += f"{str(row.get('Ölçü','')):<20}\n"
     return output
 
 
