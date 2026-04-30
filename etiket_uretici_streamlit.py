@@ -1175,9 +1175,22 @@ with tab1:
 
         st.markdown("---")
 
+        store_colors = {
+            "CPQ":  ("#1a3a5c", "#e8f0f7"),
+            "FRY":  ("#5c1a1a", "#f7e8e8"),
+            "CRSS": ("#1a5c2a", "#e8f7ec"),
+        }
         for store_code, btn_label in api_stores:
             if st.session_state.get(f"api_ready_{store_code}") and st.session_state.get(f"api_df_{store_code}") is not None:
+                hdr, bg = store_colors.get(store_code, ("#333", "#f5f5f5"))
+                st.markdown(f"""<style>
+                div[data-testid="stExpander"]:has(summary span:contains("{store_code}")) {{
+                    border-left: 4px solid {hdr} !important;
+                    background-color: {bg} !important;
+                }}
+                </style>""", unsafe_allow_html=True)
                 with st.expander(f"📋 {store_code} Siparişleri", expanded=True):
+                    st.markdown(f'<div style="background:{bg};padding:4px 10px;border-radius:6px;border-left:4px solid {hdr};margin-bottom:8px"><b style="color:{hdr}">{store_code} Siparişleri</b></div>', unsafe_allow_html=True)
                     try:
                         process_and_render(st.session_state[f"api_df_{store_code}"], source_label=f"api_{store_code}")
                     except Exception as e:
