@@ -105,11 +105,13 @@ def is_valid_order(o):
     order_id = str(o.get("order_id", ""))
     if order_id.startswith("M"):
         try:
-            ts = int(order_id.split("-")[1])
-            order_date = datetime.datetime.fromtimestamp(ts)
-            return (datetime.datetime.now() - order_date).days <= 5
+            order_date_str = o.get("orderDate", "")
+            if order_date_str:
+                order_date = datetime.datetime.strptime(str(order_date_str), "%Y-%m-%d %H:%M:%S")
+                return (datetime.datetime.now() - order_date).days <= 5
         except:
-            return True
+            pass
+        return False  # tarih parse edilemezse ekleme
     return True
 
 
@@ -157,11 +159,6 @@ def fetch_pending_orders_for_store(store_code):
             if not orders:
                 break
 
-            for o in orders:
-                id_fields = {k:o[k] for k in o.keys() if 'order' in k.lower() or 'id' in k.lower()}
-                if any(str(v).startswith("M") for v in id_fields.values()):
-                    st.write(f"DEBUG M sipariş: {id_fields}")
-                    break
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
             all_pending.extend(pending)
 
