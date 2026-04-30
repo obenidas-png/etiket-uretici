@@ -144,7 +144,8 @@ def fetch_pending_orders_for_store(store_code):
             orders = data.get("data", {}).get("orders", [])
             if not orders:
                 break
-               target = ["4049152777","4042436252","3788306094","3765387326"]
+
+            target = ["4049152777","4042436252","3788306094","3765387326"]
             for o in orders:
                 if str(o.get("order_id","")) in target:
                     st.write(f"**{o.get('order_id')}**: status=`{o.get('status')}` my_status=`{o.get('my_status')}`")
@@ -154,9 +155,7 @@ def fetch_pending_orders_for_store(store_code):
 
             if len(orders) < 100:
                 break
-        
             page += 1
-
     except requests.exceptions.Timeout:
         st.error(f"{store_code}: API isteği zaman aşımına uğradı.")
         return None
