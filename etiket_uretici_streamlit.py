@@ -157,6 +157,11 @@ def fetch_pending_orders_for_store(store_code):
             if not orders:
                 break
 
+            for o in orders:
+                id_fields = {k:o[k] for k in o.keys() if 'order' in k.lower() or 'id' in k.lower()}
+                if any(str(v).startswith("M") for v in id_fields.values()):
+                    st.write(f"DEBUG M sipariş: {id_fields}")
+                    break
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
             all_pending.extend(pending)
 
