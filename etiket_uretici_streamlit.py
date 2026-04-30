@@ -1027,10 +1027,10 @@ def process_and_render(df, source_label=""):
     </style>""", unsafe_allow_html=True)
     st.caption("Tablodaki hücreleri tıklayarak düzenleyebilirsiniz. Düzenledikten sonra o satır için çıktı alabilirsiniz.")
 
-    edit_cols = ['Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not']
-    # Sadece var olan sütunları al
-    available_cols = [c for c in edit_cols if c in orders_df.columns]
-    display_df = orders_df[available_cols].copy()
+    edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not']
+    available_data_cols = [c for c in edit_cols[1:] if c in orders_df.columns]
+    display_df = orders_df[available_data_cols].copy()
+    display_df.insert(0, 'Seç', False)
 
     edited_df = st.data_editor(
         display_df,
@@ -1038,6 +1038,7 @@ def process_and_render(df, source_label=""):
         num_rows="fixed",
         key=f"editor_{source_label}",
         column_config={
+            'Seç':              st.column_config.CheckboxColumn('Seç', width='small'),
             'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
             'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
             'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='medium'),
@@ -1050,7 +1051,7 @@ def process_and_render(df, source_label=""):
     )
 
     # Düzenlenmiş değerleri orders_df'e yansıt
-    for col in available_cols:
+    for col in available_data_cols:
         orders_df[col] = edited_df[col].values
 
     # Özet
@@ -1061,35 +1062,32 @@ def process_and_render(df, source_label=""):
     with c3: st.metric("Farklı Model", orders_df['Model'].nunique())
     with c4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
 
-    # orders_df'i session'a kaydet (indirme sonrası kaybolmasın)
+    # orders_df'i session'a kaydet
     st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
 
-    # Tek satır çıktısı
-    st.markdown("### 🎯 Tek Satır Çıktısı")
-    selected_idx = st.selectbox(
-        "Satır seç (Sipariş No - Müşteri)",
-        options=list(range(len(orders_df))),
-        format_func=lambda i: f"{orders_df.iloc[i].get('Sipariş No','')} — {orders_df.iloc[i].get('Müşteri','')} [{orders_df.iloc[i].get('Genişlik','')} {orders_df.iloc[i].get('Model','')} {orders_df.iloc[i].get('Ölçü','')}]",
-        key=f"select_row_{source_label}"
-    )
-    if st.button("📄 Bu Satır İçin Çıktı Al", key=f"single_row_{source_label}"):
-        st.session_state[f"single_idx_{source_label}"] = selected_idx
-        del_key = f"files_single_{source_label}"
-        if del_key in st.session_state:
-            del st.session_state[del_key]
+    # Seçili satırlar için çıktı
+    selected_mask = edited_df['Seç'] == True
+    selected_indices = edited_df.index[selected_mask].tolist()
 
-    if f"single_idx_{source_label}" in st.session_state:
-        idx = st.session_state[f"single_idx_{source_label}"]
+    if selected_indices:
+        st.markdown(f"### 🎯 Seçili Satırlar ({len(selected_indices)} satır) Çıktısı")
+        if st.button(f"📄 Seçili {len(selected_indices)} Satır İçin Çıktı Al", key=f"selected_rows_{source_label}", type="primary"):
+            sel_key = f"sel_indices_{source_label}"
+            st.session_state[sel_key] = selected_indices
+            if f"files_sel_{source_label}" in st.session_state:
+                del st.session_state[f"files_sel_{source_label}"]
+
+    if f"sel_indices_{source_label}" in st.session_state:
+        idxs = st.session_state[f"sel_indices_{source_label}"]
         df_s = st.session_state[f"orders_df_{source_label}"]
-        single_df = df_s.iloc[[idx]].copy()
-        render_download_row(single_df, f"Satır #{idx+1}", f"single_{source_label}")
+        sel_df = df_s.iloc[idxs].copy()
+        render_download_row(sel_df, f"Seçili {len(idxs)} Satır", f"sel_{source_label}")
 
     # Tüm liste çıktısı
     st.markdown("### 🎨 Tüm Liste Çıktısı")
     if st.button("🚀 TÜM LİSTEDEN DOSYA OLUŞTUR", type="primary", key=f"all_{source_label}"):
-        del_key = f"files_all_{source_label}"
-        if del_key in st.session_state:
-            del st.session_state[del_key]
+        if f"files_all_{source_label}" in st.session_state:
+            del st.session_state[f"files_all_{source_label}"]
 
     render_download_row(
         st.session_state[f"orders_df_{source_label}"],
