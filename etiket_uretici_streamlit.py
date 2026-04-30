@@ -897,52 +897,72 @@ def build_zip(orders_df, ts, source_label):
 
 
 def render_download_row(orders_df, label_suffix, key_suffix):
-    ts = datetime.now(ZoneInfo("Europe/Istanbul")).strftime('%Y%m%d_%H%M%S')
-    store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else 'siparis'
+    state_key = f"files_{key_suffix}"
 
-    with st.spinner("Dosyalar oluşturuluyor..."):
-        pdf_buffer = create_pdf_labels(orders_df)
-        lazer_pdf  = create_lazer_labels(orders_df)
-        uretim_txt = create_uretim_listesi(orders_df)
-        kisisel_txt = create_kisisellestime_listesi(orders_df)
-        kontrol_pdf = create_kontrol_listesi(orders_df, store_name)
-        zip_data = build_zip(orders_df, ts, key_suffix)
+    if state_key not in st.session_state:
+        ts = datetime.now(ZoneInfo("Europe/Istanbul")).strftime('%Y%m%d_%H%M%S')
+        store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else 'siparis'
+        with st.spinner("Dosyalar oluşturuluyor..."):
+            pdf_buffer = create_pdf_labels(orders_df)
+            lazer_pdf  = create_lazer_labels(orders_df)
+            uretim_txt = create_uretim_listesi(orders_df)
+            kisisel_txt = create_kisisellestime_listesi(orders_df)
+            kontrol_pdf = create_kontrol_listesi(orders_df, store_name)
+            zip_data = build_zip(orders_df, ts, key_suffix)
+        st.session_state[state_key] = {
+            "ts": ts,
+            "store_name": store_name,
+            "pdf": pdf_buffer.getvalue(),
+            "lazer": lazer_pdf,
+            "uretim": uretim_txt.encode("utf-8"),
+            "kisisel": kisisel_txt.encode("utf-8"),
+            "kontrol": kontrol_pdf,
+            "zip": zip_data,
+        }
+
+    f = st.session_state[state_key]
+    ts = f["ts"]
+    store_name = f["store_name"]
+    has_lazer = f["lazer"] is not None
 
     st.download_button(
         f"📦 {label_suffix} — TÜM DOSYALARI İNDİR (.zip)",
-        data=zip_data,
+        data=f["zip"],
         file_name=f"{store_name}_{ts}.zip",
         mime="application/zip",
-        key=f"dl_zip_{key_suffix}_{ts}",
+        key=f"dl_zip_{key_suffix}",
         type="primary",
         use_container_width=True
     )
 
     st.markdown("**Ayrı ayrı indir:**")
-    has_lazer = lazer_pdf is not None
     num_cols = 5 if has_lazer else 4
     cols = st.columns(num_cols)
     with cols[0]:
-        st.download_button("📄 Kargo Etiketleri", data=pdf_buffer.getvalue(),
+        st.download_button("📄 Kargo Etiketleri", data=f["pdf"],
             file_name=f"kargo_{ts}.pdf", mime="application/pdf",
-            key=f"dl_pdf_{key_suffix}_{ts}", use_container_width=True)
+            key=f"dl_pdf_{key_suffix}", use_container_width=True)
     if has_lazer:
         with cols[1]:
-            st.download_button("🟠 Lazer Etiketleri", data=lazer_pdf,
+            st.download_button("🟠 Lazer Etiketleri", data=f["lazer"],
                 file_name=f"lazer_{ts}.pdf", mime="application/pdf",
-                key=f"dl_lazer_{key_suffix}_{ts}", use_container_width=True)
+                key=f"dl_lazer_{key_suffix}", use_container_width=True)
     with cols[-3]:
-        st.download_button("📝 Üretim Listesi", data=uretim_txt.encode("utf-8"),
+        st.download_button("📝 Üretim Listesi", data=f["uretim"],
             file_name=f"uretim_{ts}.txt", mime="text/plain",
-            key=f"dl_uretim_{key_suffix}_{ts}", use_container_width=True)
+            key=f"dl_uretim_{key_suffix}", use_container_width=True)
     with cols[-2]:
-        st.download_button("✍️ Kişiselleştirme", data=kisisel_txt.encode("utf-8"),
+        st.download_button("✍️ Kişiselleştirme", data=f["kisisel"],
             file_name=f"kisisel_{ts}.txt", mime="text/plain",
-            key=f"dl_kisisel_{key_suffix}_{ts}", use_container_width=True)
+            key=f"dl_kisisel_{key_suffix}", use_container_width=True)
     with cols[-1]:
-        st.download_button("📋 Kontrol Listesi", data=kontrol_pdf,
+        st.download_button("📋 Kontrol Listesi", data=f["kontrol"],
             file_name=f"kontrol_{ts}.pdf", mime="application/pdf",
-            key=f"dl_kontrol_{key_suffix}_{ts}", use_container_width=True)
+            key=f"dl_kontrol_{key_suffix}", use_container_width=True)
+
+    if st.button("🔄 Yeniden oluştur", key=f"regen_{key_suffix}"):
+        del st.session_state[state_key]
+        st.rerun()
 
 
 def process_and_render(df, source_label=""):
