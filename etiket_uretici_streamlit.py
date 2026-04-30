@@ -802,12 +802,12 @@ def create_kontrol_listesi(orders_df, store_name=''):
         return text
 
     buffer = io.BytesIO()
-    page_w, page_h = landscape(A4)
+    page_w, page_h = A4
     margin = 1 * cm
     usable_w = page_w - 2 * margin
 
-    col_ratios = [0.11, 0.15, 0.06, 0.06, 0.08, 0.08, 0.25, 0.10, 0.07, 0.04]
-    col_labels = ['Siparis No', 'Musteri Adi', 'Genislik', 'Renk', 'Model', 'Olcu', 'Kisisellestime', 'Ozel Not', 'NOT', 'CHECK']
+    col_ratios = [0.16, 0.18, 0.08, 0.08, 0.10, 0.10, 0.24, 0.06]
+    col_labels = ['Siparis No', 'Musteri Adi', 'Genislik', 'Renk', 'Model', 'Olcu', 'Kisisellestime', 'CHECK']
     col_widths = [usable_w * r for r in col_ratios]
 
     n = len(orders_df)
@@ -817,7 +817,7 @@ def create_kontrol_listesi(orders_df, store_name=''):
     else:         font_size, row_h = 5.5, 0.65 * cm
 
     header_h = row_h * 1.3
-    c = canvas.Canvas(buffer, pagesize=landscape(A4))
+    c = canvas.Canvas(buffer, pagesize=A4)
 
     def draw_header(y_start):
         c.setFillColor(black)
@@ -853,8 +853,6 @@ def create_kontrol_listesi(orders_df, store_name=''):
         if pd.notna(row.get('Kişiselleştirme', '')):
             pers = str(row['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&').replace('\\n', ' ')
 
-        ozel_not = str(row.get('Özel Not', '')) if pd.notna(row.get('Özel Not', '')) else ''
-
         vals = [
             str(row['Sipariş No']),
             tr(str(row['Müşteri'])),
@@ -863,8 +861,6 @@ def create_kontrol_listesi(orders_df, store_name=''):
             tr(str(row['Model'])),
             str(row['Ölçü']),
             tr(pers),
-            tr(ozel_not),
-            '',
             '[ ]'
         ]
 
