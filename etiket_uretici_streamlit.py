@@ -1018,6 +1018,9 @@ def process_and_render(df, source_label=""):
     with c3: st.metric("Farklı Model", orders_df['Model'].nunique())
     with c4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
 
+    # orders_df'i session'a kaydet (indirme sonrası kaybolmasın)
+    st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
+
     # Tek satır çıktısı
     st.markdown("### 🎯 Tek Satır Çıktısı")
     selected_idx = st.selectbox(
@@ -1027,13 +1030,29 @@ def process_and_render(df, source_label=""):
         key=f"select_row_{source_label}"
     )
     if st.button("📄 Bu Satır İçin Çıktı Al", key=f"single_row_{source_label}"):
-        single_df = orders_df.iloc[[selected_idx]].copy()
-        render_download_row(single_df, f"Satır #{selected_idx+1}", f"single_{source_label}_{selected_idx}")
+        st.session_state[f"single_idx_{source_label}"] = selected_idx
+        del_key = f"files_single_{source_label}"
+        if del_key in st.session_state:
+            del st.session_state[del_key]
+
+    if f"single_idx_{source_label}" in st.session_state:
+        idx = st.session_state[f"single_idx_{source_label}"]
+        df_s = st.session_state[f"orders_df_{source_label}"]
+        single_df = df_s.iloc[[idx]].copy()
+        render_download_row(single_df, f"Satır #{idx+1}", f"single_{source_label}")
 
     # Tüm liste çıktısı
     st.markdown("### 🎨 Tüm Liste Çıktısı")
     if st.button("🚀 TÜM LİSTEDEN DOSYA OLUŞTUR", type="primary", key=f"all_{source_label}"):
-        render_download_row(orders_df, "Tüm Liste", f"all_{source_label}")
+        del_key = f"files_all_{source_label}"
+        if del_key in st.session_state:
+            del st.session_state[del_key]
+
+    render_download_row(
+        st.session_state[f"orders_df_{source_label}"],
+        "Tüm Liste",
+        f"all_{source_label}"
+    )
 
 
 # ─── Tab yapısı ─────────────────────────────────────────
