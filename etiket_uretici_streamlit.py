@@ -1069,32 +1069,34 @@ def process_and_render(df, source_label=""):
     selected_mask = edited_df['Seç'] == True
     selected_indices = edited_df.index[selected_mask].tolist()
 
-    if selected_indices:
-        st.markdown(f"### 🎯 Seçili Satırlar ({len(selected_indices)} satır) Çıktısı")
-        if st.button(f"📄 Seçili {len(selected_indices)} Satır İçin Çıktı Al", key=f"selected_rows_{source_label}", type="primary"):
-            sel_key = f"sel_indices_{source_label}"
-            st.session_state[sel_key] = selected_indices
+    st.markdown("### 🎯 Çıktı Al")
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        sel_label = f"📄 Seçili {len(selected_indices)} Satır İçin Çıktı Al" if selected_indices else "📄 Seçili Satır Yok"
+        if st.button(sel_label, key=f"selected_rows_{source_label}", type="primary",
+                     disabled=not selected_indices, use_container_width=True):
+            st.session_state[f"sel_indices_{source_label}"] = selected_indices
             if f"files_sel_{source_label}" in st.session_state:
                 del st.session_state[f"files_sel_{source_label}"]
+    with btn_col2:
+        if st.button("🚀 Tüm Listeden Dosya Oluştur", type="primary", key=f"all_{source_label}",
+                     use_container_width=True):
+            if f"files_all_{source_label}" in st.session_state:
+                del st.session_state[f"files_all_{source_label}"]
 
     if f"sel_indices_{source_label}" in st.session_state:
         idxs = st.session_state[f"sel_indices_{source_label}"]
         df_s = st.session_state[f"orders_df_{source_label}"]
         sel_df = df_s.iloc[idxs].copy()
+        st.markdown(f"#### Seçili {len(idxs)} Satır")
         render_download_row(sel_df, f"Seçili {len(idxs)} Satır", f"sel_{source_label}")
 
-    # Tüm liste çıktısı
-    st.markdown("### 🎨 Tüm Liste Çıktısı")
-    if st.button("🚀 TÜM LİSTEDEN DOSYA OLUŞTUR", type="primary", key=f"all_{source_label}"):
-        if f"files_all_{source_label}" in st.session_state:
-            del st.session_state[f"files_all_{source_label}"]
-
+    st.markdown("#### Tüm Liste")
     render_download_row(
         st.session_state[f"orders_df_{source_label}"],
         "Tüm Liste",
         f"all_{source_label}"
     )
-
 
 # ─── Tab yapısı ─────────────────────────────────────────
 
