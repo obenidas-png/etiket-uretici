@@ -364,6 +364,28 @@ def load_file(uploaded_file):
         return pd.read_csv(uploaded_file), 'csv'
 
 
+def clean_crss_product(product):
+    """Cerasus ürün adından gereksiz metal/altın ifadelerini temizler."""
+    remove = [
+        '14k solid gold', '14k gold', 'solid gold', '14k white gold', '14k yellow gold',
+        '14k rose gold', 'sterling silver', 'gold vermeil', 'white gold vermeil',
+        'yellow gold vermeil', 'rose gold vermeil', '14k', 'solid', 'dainty', 'minimalist',
+        'personalized', 'real gold', 'genuine', 'handmade', 'custom',
+    ]
+    result = product.lower()
+    for r in remove:
+        result = result.replace(r, ' ')
+    # Birden fazla boşlukları temizle
+    import re
+    result = re.sub(r'\s+', ' ', result).strip()
+    # İlk harfleri büyüt
+    result = result.title()
+    # 25 karakter sınırı
+    if len(result) > 25:
+        result = result[:22] + '...'
+    return result
+
+
 def parse_csv(df):
     orders = []
 
@@ -398,9 +420,7 @@ def parse_csv(df):
             props.setdefault('Personalization', row['_BuyerNote'])
 
         if 'cerasus' in store_name.lower():
-            product_clean = product.split(' - ')[0]
-            if len(product_clean) > 50:
-                product_clean = product_clean[:47] + "..."
+            product_clean = clean_crss_product(product.split(' - ')[0])
 
             # Renk: Color > General material > Band color > ürün adından
             color = (props.get('Color') or props.get('General material') or
@@ -569,12 +589,13 @@ def draw_label(c, x, y, width, height, data):
             note = str(data['Kişiselleştirme']).replace('&quot;', '"').replace('&#39;', "'").replace('&amp;', '&')
             note = turkce_to_ascii(note[:30])
         coklu_label = ' (COKLU SIPARIS)' if coklu else ''
+        olcu_crss = str(data.get('Ölçü', ''))
         rows = [
             ('Magaza', 'CRSS' + coklu_label),
             ('Siparis No', str(data['Sipariş No'])),
             ('Musteri', turkce_to_ascii(str(data['Müşteri'])[:20])),
             ('Urun', turkce_to_ascii(str(data['Ürün'])[:25])),
-            ('Zincir', ''),
+            ('Olcu/Zincir', olcu_crss),
             ('Renk', turkce_to_ascii(str(data['Renk'])[:15])),
             ('Not', note)
         ]
@@ -1019,7 +1040,7 @@ def process_and_render(df, source_label=""):
         column_config={
             'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
             'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
-            'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='small'),
+            'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='medium'),
             'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','MAT SARI','ROSE','MAT ROSE',''], width='small'),
             'Genişlik':         st.column_config.SelectboxColumn('Genişlik', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
             'Ölçü':             st.column_config.TextColumn('Ölçü', width='small'),
