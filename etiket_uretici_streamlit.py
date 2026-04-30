@@ -101,6 +101,18 @@ def get_bearer_token(client_id, client_secret):
         return None
 
 
+def is_valid_order(o):
+    order_id = str(o.get("order_id", ""))
+    if order_id.startswith("M9795C-"):
+        try:
+            ts = int(order_id.split("-")[1])
+            order_date = datetime.datetime.fromtimestamp(ts)
+            return (datetime.datetime.now() - order_date).days <= 5
+        except:
+            return True
+    return True
+
+
 def fetch_pending_orders_for_store(store_code):
     client_id, client_secret = get_store_credentials(store_code)
     if not client_id:
@@ -145,7 +157,7 @@ def fetch_pending_orders_for_store(store_code):
             if not orders:
                 break
 
-            pending = [o for o in orders if str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2"]
+            pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
             all_pending.extend(pending)
 
             if len(orders) < 100:
@@ -887,6 +899,11 @@ def render_download_row(orders_df, label_suffix, key_suffix):
     store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else 'siparis'
 
     with st.spinner("Dosyalar oluşturuluyor..."):
+        pdf_buffer = create_pdf_labels(orders_df)
+        lazer_pdf  = create_lazer_labels(orders_df)
+        uretim_txt = create_uretim_listesi(orders_df)
+        kisisel_txt = create_kisisellestime_listesi(orders_df)
+        kontrol_pdf = create_kontrol_listesi(orders_df, store_name)
         zip_data = build_zip(orders_df, ts, key_suffix)
 
     st.download_button(
@@ -898,6 +915,32 @@ def render_download_row(orders_df, label_suffix, key_suffix):
         type="primary",
         use_container_width=True
     )
+
+    st.markdown("**Ayrı ayrı indir:**")
+    has_lazer = lazer_pdf is not None
+    num_cols = 5 if has_lazer else 4
+    cols = st.columns(num_cols)
+    with cols[0]:
+        st.download_button("📄 Kargo Etiketleri", data=pdf_buffer.getvalue(),
+            file_name=f"kargo_{ts}.pdf", mime="application/pdf",
+            key=f"dl_pdf_{key_suffix}_{ts}", use_container_width=True)
+    if has_lazer:
+        with cols[1]:
+            st.download_button("🟠 Lazer Etiketleri", data=lazer_pdf,
+                file_name=f"lazer_{ts}.pdf", mime="application/pdf",
+                key=f"dl_lazer_{key_suffix}_{ts}", use_container_width=True)
+    with cols[-3]:
+        st.download_button("📝 Üretim Listesi", data=uretim_txt.encode("utf-8"),
+            file_name=f"uretim_{ts}.txt", mime="text/plain",
+            key=f"dl_uretim_{key_suffix}_{ts}", use_container_width=True)
+    with cols[-2]:
+        st.download_button("✍️ Kişiselleştirme", data=kisisel_txt.encode("utf-8"),
+            file_name=f"kisisel_{ts}.txt", mime="text/plain",
+            key=f"dl_kisisel_{key_suffix}_{ts}", use_container_width=True)
+    with cols[-1]:
+        st.download_button("📋 Kontrol Listesi", data=kontrol_pdf,
+            file_name=f"kontrol_{ts}.pdf", mime="application/pdf",
+            key=f"dl_kontrol_{key_suffix}_{ts}", use_container_width=True)
 
 
 def process_and_render(df, source_label=""):
@@ -1019,40 +1062,40 @@ with tab1:
         st.markdown("### 🔌 API ile Sipariş Getir")
 
         api_stores = [
-            ("CPQ", "🔵 Chepniq Siparişlerini Getir"),
-            ("FRY", "🔴 Foria Siparişlerini Getir"),
-            ("CRSS", "🟢 Cerasus Siparişlerini Getir"),
+            ("CPQ", "🔵 Chepniq"),
+            ("FRY", "🔴 Foria"),
+            ("CRSS", "🟢 Cerasus"),
         ]
 
-        for store_code, btn_label in api_stores:
-            with st.container():
-                col_btn, col_status = st.columns([2, 3])
-                with col_btn:
-                    if st.button(btn_label, key=f"api_btn_{store_code}", type="primary"):
-                        for k in list(st.session_state.keys()):
-                            if f"api_{store_code}" in k:
-                                st.session_state.pop(k, None)
-                        with st.spinner(f"{store_code} siparişleri çekiliyor..."):
-                            api_df = fetch_pending_orders_for_store(store_code)
-                        if api_df is not None and not api_df.empty:
-                            st.session_state[f"api_df_{store_code}"] = api_df
-                            st.session_state[f"api_ready_{store_code}"] = True
-                            st.rerun()
-                        elif api_df is not None and api_df.empty:
-                            st.warning(f"{store_code}: Bekleyen sipariş yok.")
-                with col_status:
-                    if st.session_state.get(f"api_ready_{store_code}"):
-                        n = len(st.session_state.get(f"api_df_{store_code}", []))
-                        st.success(f"✅ {n} satır hazır")
+        api_cols = st.columns(3)
+        for i, (store_code, btn_label) in enumerate(api_stores):
+            with api_cols[i]:
+                if st.button(btn_label + " Siparişlerini Getir", key=f"api_btn_{store_code}", type="primary", use_container_width=True):
+                    for k in list(st.session_state.keys()):
+                        if f"api_{store_code}" in k:
+                            st.session_state.pop(k, None)
+                    with st.spinner(f"{store_code} siparişleri çekiliyor..."):
+                        api_df = fetch_pending_orders_for_store(store_code)
+                    if api_df is not None and not api_df.empty:
+                        st.session_state[f"api_df_{store_code}"] = api_df
+                        st.session_state[f"api_ready_{store_code}"] = True
+                        st.rerun()
+                    elif api_df is not None and api_df.empty:
+                        st.warning(f"{store_code}: Bekleyen sipariş yok.")
+                if st.session_state.get(f"api_ready_{store_code}"):
+                    n = len(st.session_state.get(f"api_df_{store_code}", []))
+                    st.success(f"✅ {n} satır hazır")
 
+        st.markdown("---")
+
+        for store_code, btn_label in api_stores:
             if st.session_state.get(f"api_ready_{store_code}") and st.session_state.get(f"api_df_{store_code}") is not None:
                 with st.expander(f"📋 {store_code} Siparişleri", expanded=True):
                     try:
                         process_and_render(st.session_state[f"api_df_{store_code}"], source_label=f"api_{store_code}")
                     except Exception as e:
                         st.error(f"İşleme hatası: {e}")
-
-            st.markdown("---")
+                st.markdown("---")
 
         # ── Excel / CSV yükleme ──────────────────────────
         st.markdown("### 📂 Excel / CSV Yükle")
