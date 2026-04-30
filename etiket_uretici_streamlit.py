@@ -399,17 +399,25 @@ def parse_csv(df):
 
         if 'cerasus' in store_name.lower():
             product_clean = product.split(' - ')[0]
-            if len(product_clean) > 40:
-                product_clean = product_clean[:37] + "..."
-            color = props.get('Metal', '')
+            if len(product_clean) > 50:
+                product_clean = product_clean[:47] + "..."
+
+            # Renk: Color > General material > Band color > ürün adından
+            color = (props.get('Color') or props.get('General material') or
+                     props.get('Band color') or props.get('Metal') or '')
             if not color:
                 if '14k yellow gold' in product_lower or 'yellow gold' in product_lower: color = '14K Yellow Gold'
                 elif '14k white gold' in product_lower or 'white gold' in product_lower: color = '14K White Gold'
                 elif '14k rose gold' in product_lower or 'rose gold' in product_lower: color = '14K Rose Gold'
                 elif 'sterling silver' in product_lower or 'silver' in product_lower: color = 'Sterling Silver'
+
+            # Ölçü: Ring size > Necklace Lenght > Necklace Length
+            olcu = (props.get('Ring size') or props.get('Necklace Lenght') or
+                    props.get('Necklace Length') or props.get('Chain Length') or '')
+
             orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
-                'Müşteri': row.get('Alıcı', ''), 'Genişlik': '', 'Renk': color, 'Model': '',
-                'Ölçü': '', 'Kişiselleştirme': props.get('Personalization', ''),
+                'Müşteri': row.get('Alıcı', ''), 'Genişlik': '', 'Renk': color, 'Model': product_clean,
+                'Ölçü': olcu, 'Kişiselleştirme': props.get('Personalization', ''),
                 'Özel Not': '', 'Ürün': product_clean})
         else:
             model = ''
