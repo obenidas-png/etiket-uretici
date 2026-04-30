@@ -754,10 +754,11 @@ def create_uretim_listesi(orders_df):
     production['Genişlik_Sayısal'] = production['Genişlik'].apply(get_width_numeric)
     production_sorted = production.sort_values(by=['Model_Öncelik', 'Genişlik_Sayısal', 'Ölçü_Sayısal'])
     output = "Üretim Listesi\n==============\n\n"
-    output += f"{'Genişlik':<10}{'Model':<15}{'Ölçü (Ondalık)':<20}\n"
-    output += f"{'-'*9} {'-'*14} {'-'*19}\n"
+    output += f"{'Genişlik':<10}{'Model':<15}{'Ölçü (Ondalık)':<20}Müşteri\n"
+    output += f"{'-'*9} {'-'*14} {'-'*19} {'-'*24}\n"
     for _, row in production_sorted.iterrows():
-        output += f"{str(row['Genişlik']):<10}{str(row['Model']):<15}{str(row['Ölçü_Ondalık']):<20}\n"
+        musteri = str(row['Müşteri']) if str(row.get('Müşteri','')) not in ['', 'nan', 'None'] else ''
+        output += f"{str(row['Genişlik']):<10}{str(row['Model']):<15}{str(row['Ölçü_Ondalık']):<20}{musteri}\n"
     return output
 
 
