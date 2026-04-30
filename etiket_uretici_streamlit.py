@@ -425,7 +425,7 @@ def parse_csv(df):
             elif 'bevel' in product_lower: model = 'ÇATI MAT' if ('matte' in product_lower or 'mat' in product_lower) else 'ÇATI'
             elif 'dome' in product_lower: model = 'BOMBE'
             elif 'flat' in product_lower: model = 'DÜZ'
-            elif 'oval' in product_lower or 'solitaire' in product_lower: model = 'OVAL TEKTAŞ'
+            elif 'oval' in product_lower or 'solitaire' in product_lower: model = 'TEKTAŞ'
             if not width:
                 width_match = re.search(r'(\d+)\s*mm', product_lower)
                 if width_match: width = width_match.group(1) + 'MM'
@@ -997,8 +997,8 @@ def process_and_render(df, source_label=""):
         column_config={
             'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
             'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
-            'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','OVAL TEKTAŞ','YENİLEME',''], width='small'),
-            'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','ROSE',''], width='small'),
+            'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='small'),
+            'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','MAT SARI','ROSE','MAT ROSE',''], width='small'),
             'Genişlik':         st.column_config.SelectboxColumn('Genişlik', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
             'Ölçü':             st.column_config.TextColumn('Ölçü', width='small'),
             'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='large'),
