@@ -145,9 +145,13 @@ def fetch_pending_orders_for_store(store_code):
             if not orders:
                 break
 
-            pending = [o for o in orders if str(o.get("status", "")) == "4" or str(o.get("my_status", "")) == "4"]
-            all_pending.extend(pending)
+            target = ["4049152777","4042436252","3788306094","3765387326"]
+for o in orders:
+    if str(o.get("order_id","")) in target:
+        st.write(f"**{o.get('order_id')}**: status=`{o.get('status')}` my_status=`{o.get('my_status')}`")
 
+pending = [o for o in orders if str(o.get("status", "")) == "4" or str(o.get("my_status", "")) == "4"]
+all_pending.extend(pending)
             if len(orders) < 100:
                 break
             page += 1
