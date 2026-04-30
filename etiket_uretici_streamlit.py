@@ -1176,21 +1176,26 @@ with tab1:
         st.markdown("---")
 
         store_colors = {
-            "CPQ":  ("#1a3a5c", "#e8f0f7"),
-            "FRY":  ("#5c1a1a", "#f7e8e8"),
-            "CRSS": ("#1a5c2a", "#e8f7ec"),
+            "CPQ":  ("#1a3a5c", "#d6e4f0"),
+            "FRY":  ("#8b0000", "#f5d5d5"),
+            "CRSS": ("#1a5c2a", "#d5f0dc"),
         }
         for store_code, btn_label in api_stores:
             if st.session_state.get(f"api_ready_{store_code}") and st.session_state.get(f"api_df_{store_code}") is not None:
                 hdr, bg = store_colors.get(store_code, ("#333", "#f5f5f5"))
-                st.markdown(f"""<style>
-                div[data-testid="stExpander"]:has(summary span:contains("{store_code}")) {{
-                    border-left: 4px solid {hdr} !important;
-                    background-color: {bg} !important;
-                }}
-                </style>""", unsafe_allow_html=True)
-                with st.expander(f"📋 {store_code} Siparişleri", expanded=True):
-                    st.markdown(f'<div style="background:{bg};padding:4px 10px;border-radius:6px;border-left:4px solid {hdr};margin-bottom:8px"><b style="color:{hdr}">{store_code} Siparişleri</b></div>', unsafe_allow_html=True)
+                n = len(st.session_state[f"api_df_{store_code}"])
+                st.markdown(
+                    f'''<div style="background:{hdr};color:white;padding:8px 16px;border-radius:8px 8px 0 0;font-weight:600;font-size:15px;margin-bottom:0">
+                    📋 {store_code} Siparişleri &nbsp;<span style="font-weight:400;font-size:13px;opacity:0.85">({n} sipariş)</span></div>
+                    <style>
+                    section[data-testid="stExpander"] div[data-testid="stExpanderDetails"] * {{
+                        color: inherit;
+                    }}
+                    </style>''',
+                    unsafe_allow_html=True
+                )
+                st.markdown(f'<style>div[data-testid="stExpander"] summary p {{ color: {hdr} !important; font-weight: 700 !important; }}</style>', unsafe_allow_html=True)
+                with st.expander(f"📋 {store_code} Siparişleri ({n} sipariş)", expanded=True):
                     try:
                         process_and_render(st.session_state[f"api_df_{store_code}"], source_label=f"api_{store_code}")
                     except Exception as e:
