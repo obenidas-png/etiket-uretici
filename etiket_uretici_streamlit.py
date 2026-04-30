@@ -125,7 +125,7 @@ def fetch_pending_orders_for_store(store_code):
     all_pending = []
     page = 1
 
-   try:
+    try:
         while True:
             resp = requests.get(
                 f"{SHIPENTEGRA_API_BASE}/orders",
@@ -139,15 +139,19 @@ def fetch_pending_orders_for_store(store_code):
             if resp.status_code != 200:
                 st.error(f"{store_code} API hatası: {resp.status_code}")
                 return None
+
             data = resp.json()
             orders = data.get("data", {}).get("orders", [])
             if not orders:
                 break
+
             pending = [o for o in orders if str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2"]
             all_pending.extend(pending)
+
             if len(orders) < 100:
                 break
             page += 1
+
     except requests.exceptions.Timeout:
         st.error(f"{store_code}: API isteği zaman aşımına uğradı.")
         return None
