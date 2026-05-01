@@ -1030,33 +1030,13 @@ def process_and_render(df, source_label=""):
     edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not']
     available_data_cols = [c for c in edit_cols[1:] if c in orders_df.columns]
 
-    # Satır ekleme / klonlama kontrolleri
-    action_col1, action_col2, action_col3 = st.columns([2, 2, 4])
-    with action_col1:
-        if st.button("➕ Boş satır ekle", key=f"add_row_{source_label}", use_container_width=True):
-            empty_row = {c: '' for c in available_data_cols}
-            empty_row['Çoklu'] = False
-            empty_row['Mağaza'] = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else ''
-            empty_row['Ürün'] = ''
-            orders_df = pd.concat([orders_df, pd.DataFrame([empty_row])], ignore_index=True)
-            st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
-            st.rerun()
-    with action_col2:
-        clone_idx = st.number_input("Satır no (klonla)", min_value=1, max_value=len(orders_df),
-                                     value=1, step=1, key=f"clone_idx_{source_label}", label_visibility="collapsed")
-        if st.button(f"📋 {clone_idx}. satırı klonla", key=f"clone_row_{source_label}", use_container_width=True):
-            row_to_clone = orders_df.iloc[clone_idx - 1].copy()
-            orders_df = pd.concat([orders_df, pd.DataFrame([row_to_clone])], ignore_index=True)
-            st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
-            st.rerun()
-
     display_df = orders_df[available_data_cols].copy()
     display_df.insert(0, 'Seç', False)
 
     edited_df = st.data_editor(
         display_df,
         use_container_width=True,
-        num_rows="fixed",
+        num_rows="dynamic",
         key=f"editor_{source_label}",
         column_config={
             'Seç':              st.column_config.CheckboxColumn('Seç', width='small'),
