@@ -1051,9 +1051,20 @@ def process_and_render(df, source_label=""):
         }
     )
 
-    # Düzenlenmiş değerleri orders_df'e yansıt
+    # Düzenlenmiş değerleri orders_df'e yansıt (yeni satırlar dahil)
+    edited_data = edited_df.drop(columns=['Seç'], errors='ignore').reset_index(drop=True)
+    if len(edited_data) > len(orders_df):
+        # Yeni satırlar eklendi, orders_df'i genişlet
+        extra = len(edited_data) - len(orders_df)
+        template = orders_df.iloc[0].copy() if len(orders_df) > 0 else {}
+        for _ in range(extra):
+            empty = {c: '' for c in orders_df.columns}
+            empty['Çoklu'] = False
+            orders_df = pd.concat([orders_df, pd.DataFrame([empty])], ignore_index=True)
+    orders_df = orders_df.iloc[:len(edited_data)].reset_index(drop=True)
     for col in available_data_cols:
-        orders_df[col] = edited_df[col].values
+        if col in edited_data.columns:
+            orders_df[col] = edited_data[col].values
 
     # Özet
     st.markdown("### 📊 Özet")
