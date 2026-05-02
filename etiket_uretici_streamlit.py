@@ -1039,7 +1039,9 @@ def process_and_render(df, source_label=""):
     with st.spinner("Siparişler işleniyor..."):
         orders_df = parse_csv(df)
 
-    st.success(f"✅ {len(orders_df)} sipariş işlendi! {source_label}")
+    coklu_count = orders_df['Çoklu'].sum() if 'Çoklu' in orders_df.columns else 0
+    coklu_text = f" ({int(coklu_count)} çiftli sipariş)" if coklu_count > 0 else ""
+    st.success(f"✅ {len(orders_df)} sipariş işlendi!{coklu_text} {source_label}")
 
     with st.spinner("Sipariş listesi güncelleniyor..."):
         sonuc = load_orders_to_session(orders_df)
@@ -1059,6 +1061,9 @@ def process_and_render(df, source_label=""):
 
     display_df = orders_df[available_data_cols].copy()
     display_df.insert(0, 'Seç', False)
+    # Çiftli siparişleri işaretle
+    if 'Çoklu' in orders_df.columns:
+        display_df.insert(1, '⚡', orders_df['Çoklu'].apply(lambda x: '👥' if x else ''))
 
     edited_df = st.data_editor(
         display_df,
@@ -1067,6 +1072,7 @@ def process_and_render(df, source_label=""):
         key=f"editor_{source_label}",
         column_config={
             'Seç':              st.column_config.CheckboxColumn('Seç', width='small'),
+            '⚡':               st.column_config.TextColumn('', width='small'),
             'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
             'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
             'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='medium'),
@@ -1079,7 +1085,7 @@ def process_and_render(df, source_label=""):
     )
 
     # Düzenlenmiş değerleri orders_df'e yansıt (yeni satırlar dahil)
-    edited_data = edited_df.drop(columns=['Seç'], errors='ignore').reset_index(drop=True)
+    edited_data = edited_df.drop(columns=['Seç', '⚡'], errors='ignore').reset_index(drop=True)
     if len(edited_data) > len(orders_df):
         # Yeni satırlar eklendi, orders_df'i genişlet
         extra = len(edited_data) - len(orders_df)
