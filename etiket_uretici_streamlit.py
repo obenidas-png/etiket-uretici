@@ -160,8 +160,9 @@ def fetch_pending_orders_for_store(store_code):
                 break
 
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
-            for o in pending[:3]:
-                st.write(f"my_note: {repr(o.get('my_note'))} | my_status: {repr(o.get('my_status'))} | order_id: {o.get('order_id')}")
+            for o in orders:
+                if str(o.get('order_id','')) == '4043438286':
+                    st.write(f"FOUND - my_note: {repr(o.get('my_note'))} | my_status: {repr(o.get('my_status'))} | status: {repr(o.get('status'))} | tags: {repr(o.get('tags'))}")
             all_pending.extend(pending)
 
             if len(orders) < 100:
