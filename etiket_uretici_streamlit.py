@@ -465,7 +465,7 @@ def parse_csv(df):
             orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                 'Müşteri': row.get('Alıcı', ''), 'Genişlik': '', 'Renk': color, 'Model': product_clean,
                 'Ölçü': olcu, 'Kişiselleştirme': props.get('Personalization', ''),
-                'Özel Not': '', 'Ürün': product_clean})
+                'Özel Not': '', 'Durum': '', 'Ürün': product_clean})
         else:
             model = ''
             color = ''
@@ -500,24 +500,27 @@ def parse_csv(df):
                     if hers_match: width1 = hers_match.group(1) + 'MM'
                     if his_match: width2 = his_match.group(1) + 'MM'
                 if size1:
-                    _ozel1 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
+                    _ozel1 = str(row.get('_MyNote', '') or '')
+                    _durum1 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width1, 'Renk': color, 'Model': model,
                         'Ölçü': size1, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': _ozel1, 'Ürün': product})
+                        'Özel Not': _ozel1, 'Durum': _durum1, 'Ürün': product})
                 if size2:
-                    _ozel2 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
+                    _ozel2 = str(row.get('_MyNote', '') or '')
+                    _durum2 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width2, 'Renk': color, 'Model': model,
                         'Ölçü': size2, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': _ozel2, 'Ürün': product})
+                        'Özel Not': _ozel2, 'Durum': _durum2, 'Ürün': product})
             else:
-                _ozel = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
+                _ozel = str(row.get('_MyNote', '') or '')
+                _durum = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
                 orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                     'Müşteri': row.get('Alıcı', ''), 'Genişlik': width.upper() if width else '',
                     'Renk': color, 'Model': model.upper() if model else '', 'Ölçü': ring_size,
                     'Kişiselleştirme': props.get('Personalization', ''),
-                    'Özel Not': _ozel, 'Ürün': product})
+                    'Özel Not': _ozel, 'Durum': _durum, 'Ürün': product})
 
     siparis_sayilari = pd.Series([o['Sipariş No'] for o in orders])
     tekrar_edenler = set(siparis_sayilari[siparis_sayilari.duplicated(keep=False)].tolist())
@@ -1060,7 +1063,7 @@ def process_and_render(df, source_label=""):
     </style>""", unsafe_allow_html=True)
     st.caption("Tablodaki hücreleri tıklayarak düzenleyebilirsiniz. Düzenledikten sonra o satır için çıktı alabilirsiniz.")
 
-    edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not']
+    edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not', 'Durum']
     available_data_cols = [c for c in edit_cols[1:] if c in orders_df.columns]
 
     # Satır ekle butonu
@@ -1071,18 +1074,18 @@ def process_and_render(df, source_label=""):
         st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
         st.rerun()
 
-    display_df = orders_df[available_data_cols].copy()
+    display_df = orders_df[available_data_cols].copy().reset_index(drop=True)
     display_df.insert(0, 'Seç', False)
-    # Çiftli siparişleri işaretle
-    if 'Çoklu' in orders_df.columns:
-        def row_icon(row):
-            ozel = str(row.get('Özel Not', '') or '').upper()
-            if 'GEÇİLDİ' in ozel or 'GECILDI' in ozel:
-                return '✅'
-            if row.get('Çoklu'):
-                return '👥'
-            return ''
-        display_df.insert(1, '⚡', orders_df.apply(row_icon, axis=1))
+    # Çiftli / GEÇİLDİ işareti
+    def row_icon(row):
+        durum = str(row.get('Durum', '') or '').upper()
+        if 'GEÇİLDİ' in durum:
+            return '✅'
+        if str(orders_df.loc[row.name, 'Çoklu'] if 'Çoklu' in orders_df.columns and row.name in orders_df.index else False) == 'True':
+            return '👥'
+        return ''
+    icons = display_df.apply(row_icon, axis=1)
+    display_df.insert(1, '⚡', icons.values)
 
     edited_df = st.data_editor(
         display_df,
@@ -1101,6 +1104,7 @@ def process_and_render(df, source_label=""):
             'Ölçü':             st.column_config.TextColumn('Ölçü', width='small'),
             'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='large'),
             'Özel Not':         st.column_config.TextColumn('Özel Not', width='large'),
+            'Durum':            st.column_config.TextColumn('Durum', width='small'),
         }
     )
 
@@ -1120,9 +1124,9 @@ def process_and_render(df, source_label=""):
             orders_df[col] = edited_data[col].values
 
     # Özet
-    gecildi_count = orders_df['Özel Not'].apply(
-        lambda x: 'GEÇİLDİ' in str(x).upper() or 'GECILDI' in str(x).upper()
-    ).sum() if 'Özel Not' in orders_df.columns else 0
+    gecildi_count = orders_df['Durum'].apply(
+        lambda x: 'GEÇİLDİ' in str(x).upper()
+    ).sum() if 'Durum' in orders_df.columns else 0
 
     st.markdown("### 📊 Özet")
     c1, c2, c3, c4, c5 = st.columns(5)
