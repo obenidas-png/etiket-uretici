@@ -1072,7 +1072,14 @@ def process_and_render(df, source_label=""):
     display_df.insert(0, 'Seç', False)
     # Çiftli siparişleri işaretle
     if 'Çoklu' in orders_df.columns:
-        display_df.insert(1, '⚡', orders_df['Çoklu'].apply(lambda x: '👥' if x else ''))
+        def row_icon(row):
+            ozel = str(row.get('Özel Not', '') or '').upper()
+            if 'GEÇİLDİ' in ozel or 'GECILDI' in ozel:
+                return '✅'
+            if row.get('Çoklu'):
+                return '👥'
+            return ''
+        display_df.insert(1, '⚡', orders_df.apply(row_icon, axis=1))
 
     edited_df = st.data_editor(
         display_df,
@@ -1110,12 +1117,17 @@ def process_and_render(df, source_label=""):
             orders_df[col] = edited_data[col].values
 
     # Özet
+    gecildi_count = orders_df['Özel Not'].apply(
+        lambda x: 'GEÇİLDİ' in str(x).upper() or 'GECILDI' in str(x).upper()
+    ).sum() if 'Özel Not' in orders_df.columns else 0
+
     st.markdown("### 📊 Özet")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1: st.metric("Toplam Sipariş", len(orders_df))
     with c2: st.metric("Kişiselleştirme", orders_df['Kişiselleştirme'].notna().sum())
     with c3: st.metric("Farklı Model", orders_df['Model'].nunique())
     with c4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
+    with c5: st.metric("✅ Geçildi", int(gecildi_count))
 
     # orders_df'i session'a kaydet
     st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
