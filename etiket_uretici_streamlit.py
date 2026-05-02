@@ -160,12 +160,6 @@ def fetch_pending_orders_for_store(store_code):
                 break
 
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
-            # Debug: count items per order_id
-            from collections import Counter
-            id_counts = Counter(str(o.get("order_id","")) for o in pending)
-            multi = {k:v for k,v in id_counts.items() if v > 1}
-            if multi:
-                st.write(f"DEBUG çift siparişler: {multi}")
             all_pending.extend(pending)
 
             if len(orders) < 100:
@@ -196,29 +190,56 @@ def api_orders_to_df(orders, store_code="CPQ"):
         buyer    = str(o.get("ship_to_name") or "")
         product  = str(o.get("name") or o.get("title") or "")
         gift_msg = str(o.get("gift_message") or "")
+        qty      = int(o.get("count") or o.get("quantity") or 1)
 
         variations_raw = o.get("variations") or []
-        opts = {}
+
+        # Her variation grubunu ayrı satır olarak topla
+        var_groups = []
         for var_group in variations_raw:
             if isinstance(var_group, list):
+                opts = {}
                 for v in var_group:
                     if isinstance(v, dict) and v.get("name") and v.get("value") is not None:
                         opts[v["name"]] = str(v["value"])
+                if opts:
+                    var_groups.append(opts)
 
-        ozellikler_parts = [f"Ad:{k},Değer:{v}" for k, v in opts.items()]
-        ozellikler = ",".join(ozellikler_parts) if ozellikler_parts else None
-
-        rows.append({
-            "MagazaAdı":       store_label,
-            "SiparişNumarası": order_no,
-            "Alıcı":           buyer,
-            "ÜrünAdı":         product,
-            "Özellikler":      ozellikler,
-            "_BuyerNote":      str(o.get("customer_note") or ""),
-            "_GiftMessage":    gift_msg,
-            "_ShipBy":         str(o.get("ship_by_date") or ""),
-            "_OrderTotal":     o.get("total_price") or 0,
-        })
+        # Eğer variation grubu sayısı qty ile eşleşiyorsa her grubu ayrı satır yap
+        if len(var_groups) >= qty > 1:
+            for i in range(qty):
+                opts = var_groups[i] if i < len(var_groups) else var_groups[-1]
+                ozellikler_parts = [f"Ad:{k},Değer:{v}" for k, v in opts.items()]
+                rows.append({
+                    "MagazaAdı":       store_label,
+                    "SiparişNumarası": order_no,
+                    "Alıcı":           buyer,
+                    "ÜrünAdı":         product,
+                    "Özellikler":      ",".join(ozellikler_parts) if ozellikler_parts else None,
+                    "_BuyerNote":      str(o.get("customer_note") or ""),
+                    "_GiftMessage":    gift_msg,
+                    "_ShipBy":         str(o.get("ship_by_date") or ""),
+                    "_OrderTotal":     o.get("total_price") or 0,
+                })
+        else:
+            # Tüm variation gruplarını birleştir (tek satır)
+            opts = {}
+            for vg in var_groups:
+                for k, v in vg.items():
+                    if k not in opts:
+                        opts[k] = v
+            ozellikler_parts = [f"Ad:{k},Değer:{v}" for k, v in opts.items()]
+            rows.append({
+                "MagazaAdı":       store_label,
+                "SiparişNumarası": order_no,
+                "Alıcı":           buyer,
+                "ÜrünAdı":         product,
+                "Özellikler":      ",".join(ozellikler_parts) if ozellikler_parts else None,
+                "_BuyerNote":      str(o.get("customer_note") or ""),
+                "_GiftMessage":    gift_msg,
+                "_ShipBy":         str(o.get("ship_by_date") or ""),
+                "_OrderTotal":     o.get("total_price") or 0,
+            })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
