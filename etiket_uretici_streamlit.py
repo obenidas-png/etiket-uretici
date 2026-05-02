@@ -1110,6 +1110,15 @@ def process_and_render(df, source_label=""):
     # orders_df'i session'a kaydet
     st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
 
+    # Seçili satırları sil
+    if selected_indices:
+        if st.button(f"🗑️ Seçili {len(selected_indices)} satırı sil", key=f"del_rows_{source_label}", type="secondary"):
+            orders_df = orders_df.drop(index=selected_indices).reset_index(drop=True)
+            st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
+            for k in [f"files_all_{source_label}", f"files_sel_{source_label}", f"sel_indices_{source_label}"]:
+                if k in st.session_state: del st.session_state[k]
+            st.rerun()
+
     # Seçili satırlar için çıktı
     selected_mask = edited_df['Seç'] == True
     selected_indices = edited_df.index[selected_mask].tolist()
