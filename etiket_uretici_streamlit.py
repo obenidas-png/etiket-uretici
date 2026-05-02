@@ -504,21 +504,21 @@ def parse_csv(df):
                     if hers_match: width1 = hers_match.group(1) + 'MM'
                     if his_match: width2 = his_match.group(1) + 'MM'
                 if size1:
-                    _ozel1 = str(row.get('_MyNote', '') or '')
+                    _ozel1 = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                     _durum1 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width1, 'Renk': color, 'Model': model,
                         'Ölçü': size1, 'Kişiselleştirme': props.get('Personalization', ''),
                         'Özel Not': _ozel1, 'Durum': _durum1, 'Ürün': product})
                 if size2:
-                    _ozel2 = str(row.get('_MyNote', '') or '')
+                    _ozel2 = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                     _durum2 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width2, 'Renk': color, 'Model': model,
                         'Ölçü': size2, 'Kişiselleştirme': props.get('Personalization', ''),
                         'Özel Not': _ozel2, 'Durum': _durum2, 'Ürün': product})
             else:
-                _ozel = str(row.get('_MyNote', '') or '')
+                _ozel = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                 _durum = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
                 orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                     'Müşteri': row.get('Alıcı', ''), 'Genişlik': width.upper() if width else '',
@@ -1102,12 +1102,12 @@ def process_and_render(df, source_label=""):
             '⚡':               st.column_config.TextColumn('', width='small'),
             'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
             'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
-            'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='medium'),
+            'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='small'),
             'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','MAT SARI','ROSE','MAT ROSE',''], width='small'),
             'Genişlik':         st.column_config.SelectboxColumn('Genişlik', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
             'Ölçü':             st.column_config.TextColumn('Ölçü', width='small'),
-            'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='large'),
-            'Özel Not':         st.column_config.TextColumn('Özel Not', width='large'),
+            'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='medium'),
+            'Özel Not':         st.column_config.TextColumn('Özel Not', width='medium'),
             'Durum':            st.column_config.TextColumn('Durum', width='small'),
         }
     )
