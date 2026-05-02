@@ -160,6 +160,12 @@ def fetch_pending_orders_for_store(store_code):
                 break
 
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
+            # Debug: çiftli sipariş yapısını göster
+            for o in pending:
+                if str(o.get("order_id","")) == "4042093634":
+                    st.write(f"DEBUG keys: {list(o.keys())}")
+                    st.write(f"DEBUG items field: {o.get('items') or o.get('order_items') or o.get('products') or 'YOK'}")
+                    break
             all_pending.extend(pending)
 
             if len(orders) < 100:
