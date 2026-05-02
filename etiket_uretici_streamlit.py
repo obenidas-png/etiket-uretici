@@ -1059,6 +1059,14 @@ def process_and_render(df, source_label=""):
     edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not']
     available_data_cols = [c for c in edit_cols[1:] if c in orders_df.columns]
 
+    # Satır ekle butonu
+    if st.button("➕ Boş satır ekle", key=f"add_row_{source_label}"):
+        empty = {c: '' for c in orders_df.columns}
+        empty['Çoklu'] = False
+        orders_df = pd.concat([orders_df, pd.DataFrame([empty])], ignore_index=True)
+        st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
+        st.rerun()
+
     display_df = orders_df[available_data_cols].copy()
     display_df.insert(0, 'Seç', False)
     # Çiftli siparişleri işaretle
@@ -1068,8 +1076,9 @@ def process_and_render(df, source_label=""):
     edited_df = st.data_editor(
         display_df,
         use_container_width=True,
-        num_rows="dynamic",
+        num_rows="fixed",
         key=f"editor_{source_label}",
+        hide_index=True,
         column_config={
             'Seç':              st.column_config.CheckboxColumn('Seç', width='small'),
             '⚡':               st.column_config.TextColumn('', width='small'),
