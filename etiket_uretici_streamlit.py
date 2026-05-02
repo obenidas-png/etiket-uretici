@@ -160,8 +160,6 @@ def fetch_pending_orders_for_store(store_code):
                 break
 
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
-            for o in orders[:5]:
-                st.write(f"order_id: {o.get('order_id')} | tags: {repr(o.get('tags'))}")
             all_pending.extend(pending)
 
             if len(orders) < 100:
@@ -502,21 +500,24 @@ def parse_csv(df):
                     if hers_match: width1 = hers_match.group(1) + 'MM'
                     if his_match: width2 = his_match.group(1) + 'MM'
                 if size1:
+                    _ozel1 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width1, 'Renk': color, 'Model': model,
                         'Ölçü': size1, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': str(row.get('_MyNote', '') or ''), 'Ürün': product})
+                        'Özel Not': _ozel1, 'Ürün': product})
                 if size2:
+                    _ozel2 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width2, 'Renk': color, 'Model': model,
                         'Ölçü': size2, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': str(row.get('_MyNote', '') or ''), 'Ürün': product})
+                        'Özel Not': _ozel2, 'Ürün': product})
             else:
+                _ozel = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                 orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                     'Müşteri': row.get('Alıcı', ''), 'Genişlik': width.upper() if width else '',
                     'Renk': color, 'Model': model.upper() if model else '', 'Ölçü': ring_size,
                     'Kişiselleştirme': props.get('Personalization', ''),
-                    'Özel Not': str(row.get('_MyNote', '') or ''), 'Ürün': product})
+                    'Özel Not': _ozel, 'Ürün': product})
 
     siparis_sayilari = pd.Series([o['Sipariş No'] for o in orders])
     tekrar_edenler = set(siparis_sayilari[siparis_sayilari.duplicated(keep=False)].tolist())
