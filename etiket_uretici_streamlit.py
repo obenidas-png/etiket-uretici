@@ -503,17 +503,18 @@ def parse_csv(df):
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width1, 'Renk': color, 'Model': model,
                         'Ölçü': size1, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': '', 'Ürün': product})
+                        'Özel Not': str(row.get('_MyNote', '') or ''), 'Ürün': product})
                 if size2:
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width2, 'Renk': color, 'Model': model,
                         'Ölçü': size2, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': '', 'Ürün': product})
+                        'Özel Not': str(row.get('_MyNote', '') or ''), 'Ürün': product})
             else:
                 orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                     'Müşteri': row.get('Alıcı', ''), 'Genişlik': width.upper() if width else '',
                     'Renk': color, 'Model': model.upper() if model else '', 'Ölçü': ring_size,
-                    'Kişiselleştirme': props.get('Personalization', ''), 'Özel Not': '', 'Ürün': product})
+                    'Kişiselleştirme': props.get('Personalization', ''),
+                    'Özel Not': str(row.get('_MyNote', '') or ''), 'Ürün': product})
 
     siparis_sayilari = pd.Series([o['Sipariş No'] for o in orders])
     tekrar_edenler = set(siparis_sayilari[siparis_sayilari.duplicated(keep=False)].tolist())
