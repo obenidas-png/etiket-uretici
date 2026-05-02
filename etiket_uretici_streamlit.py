@@ -220,6 +220,8 @@ def api_orders_to_df(orders, store_code="CPQ"):
                     "_GiftMessage":    gift_msg,
                     "_ShipBy":         str(o.get("ship_by_date") or ""),
                     "_OrderTotal":     o.get("total_price") or 0,
+                    "_MyNote":         str(o.get("my_note") or ""),
+                    "_Tags":           str(o.get("tags") or ""),
                 })
         else:
             # Tüm variation gruplarını birleştir (tek satır)
@@ -239,6 +241,8 @@ def api_orders_to_df(orders, store_code="CPQ"):
                 "_GiftMessage":    gift_msg,
                 "_ShipBy":         str(o.get("ship_by_date") or ""),
                 "_OrderTotal":     o.get("total_price") or 0,
+                "_MyNote":         str(o.get("my_note") or ""),
+                "_Tags":           str(o.get("tags") or ""),
             })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
