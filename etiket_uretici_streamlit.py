@@ -160,12 +160,12 @@ def fetch_pending_orders_for_store(store_code):
                 break
 
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
-            # Debug: çiftli sipariş yapısını göster
-            for o in pending:
-                if str(o.get("order_id","")) == "4042093634":
-                    st.write(f"DEBUG keys: {list(o.keys())}")
-                    st.write(f"DEBUG items field: {o.get('items') or o.get('order_items') or o.get('products') or 'YOK'}")
-                    break
+            # Debug: count items per order_id
+            from collections import Counter
+            id_counts = Counter(str(o.get("order_id","")) for o in pending)
+            multi = {k:v for k,v in id_counts.items() if v > 1}
+            if multi:
+                st.write(f"DEBUG çift siparişler: {multi}")
             all_pending.extend(pending)
 
             if len(orders) < 100:
@@ -271,12 +271,12 @@ def load_orders_to_session(orders_df):
         existing = load_sheet_data()
         if not existing.empty:
             existing_keys = set(
-                str(r.get("Sipariş No","")) + "_" + str(r.get("Genişlik",""))
+                str(r.get("Sipariş No","")) + "_" + str(r.get("Genişlik","")) + "_" + str(r.get("Ölçü",""))
                 for _, r in existing.iterrows()
             )
             new_rows = []
             for _, row in orders_df.iterrows():
-                key = str(row["Sipariş No"]) + "_" + str(row.get("Genişlik",""))
+                key = str(row["Sipariş No"]) + "_" + str(row.get("Genişlik","")) + "_" + str(row.get("Ölçü",""))
                 if key not in existing_keys:
                     new_rows.append([
                         str(row["Sipariş No"]), str(row.get("Müşteri","")), str(row.get("Mağaza","")),
