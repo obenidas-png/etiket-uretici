@@ -505,21 +505,21 @@ def parse_csv(df):
                     if his_match: width2 = his_match.group(1) + 'MM'
                 if size1:
                     _ozel1 = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
-                    _durum1 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
+                    _durum1 = str(row.get('_Tags','')) if str(row.get('_Tags','')) not in ['','None'] else ''
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width1, 'Renk': color, 'Model': model,
                         'Ölçü': size1, 'Kişiselleştirme': props.get('Personalization', ''),
                         'Özel Not': _ozel1, 'Durum': _durum1, 'Ürün': product})
                 if size2:
                     _ozel2 = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
-                    _durum2 = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
+                    _durum2 = str(row.get('_Tags','')) if str(row.get('_Tags','')) not in ['','None'] else ''
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width2, 'Renk': color, 'Model': model,
                         'Ölçü': size2, 'Kişiselleştirme': props.get('Personalization', ''),
                         'Özel Not': _ozel2, 'Durum': _durum2, 'Ürün': product})
             else:
                 _ozel = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
-                _durum = 'GEÇİLDİ' if str(row.get('_Tags','')) == '1' else ''
+                _durum = str(row.get('_Tags','')) if str(row.get('_Tags','')) not in ['','None'] else ''
                 orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                     'Müşteri': row.get('Alıcı', ''), 'Genişlik': width.upper() if width else '',
                     'Renk': color, 'Model': model.upper() if model else '', 'Ölçü': ring_size,
@@ -1049,6 +1049,14 @@ def render_download_row(orders_df, label_suffix, key_suffix):
 def process_and_render(df, source_label=""):
     with st.spinner("Siparişler işleniyor..."):
         orders_df = parse_csv(df)
+
+    # Özel Not'ta GEÇİLDİ yazıyorsa Durum'a taşı, Özel Not'u temizle
+    if 'Özel Not' in orders_df.columns:
+        mask = orders_df['Özel Not'].apply(lambda x: str(x).strip().upper() == 'GEÇİLDİ')
+        if 'Durum' not in orders_df.columns:
+            orders_df['Durum'] = ''
+        orders_df.loc[mask, 'Durum'] = 'GEÇİLDİ'
+        orders_df.loc[mask, 'Özel Not'] = ''
 
     coklu_count = orders_df['Çoklu'].sum() if 'Çoklu' in orders_df.columns else 0
     coklu_text = f" ({int(coklu_count)} çiftli sipariş)" if coklu_count > 0 else ""
