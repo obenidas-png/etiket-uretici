@@ -1047,16 +1047,23 @@ def render_download_row(orders_df, label_suffix, key_suffix):
 
 
 def process_and_render(df, source_label=""):
-    with st.spinner("Siparişler işleniyor..."):
-        orders_df = parse_csv(df)
+    # Session'da zaten işlenmiş df varsa onu kullan (boş satır ekleme vs. için)
+    session_key = f"orders_df_{source_label}"
+    if session_key in st.session_state:
+        orders_df = st.session_state[session_key]
+    else:
+        with st.spinner("Siparişler işleniyor..."):
+            orders_df = parse_csv(df)
 
-    # Özel Not'ta GEÇİLDİ yazıyorsa Durum'a taşı, Özel Not'u temizle
-    if 'Özel Not' in orders_df.columns:
-        mask = orders_df['Özel Not'].apply(lambda x: str(x).strip().upper() == 'GEÇİLDİ')
-        if 'Durum' not in orders_df.columns:
-            orders_df['Durum'] = ''
-        orders_df.loc[mask, 'Durum'] = 'GEÇİLDİ'
-        orders_df.loc[mask, 'Özel Not'] = ''
+        # Özel Not'ta GEÇİLDİ yazıyorsa Durum'a taşı, Özel Not'u temizle
+        if 'Özel Not' in orders_df.columns:
+            mask = orders_df['Özel Not'].apply(lambda x: str(x).strip().upper() == 'GEÇİLDİ')
+            if 'Durum' not in orders_df.columns:
+                orders_df['Durum'] = ''
+            orders_df.loc[mask, 'Durum'] = 'GEÇİLDİ'
+            orders_df.loc[mask, 'Özel Not'] = ''
+
+        st.session_state[session_key] = orders_df.copy()
 
     coklu_count = orders_df['Çoklu'].sum() if 'Çoklu' in orders_df.columns else 0
     coklu_text = f" ({int(coklu_count)} çiftli sipariş)" if coklu_count > 0 else ""
@@ -1148,7 +1155,7 @@ def process_and_render(df, source_label=""):
     with c4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
     with c5: st.metric("✅ Geçildi", int(gecildi_count))
 
-    # orders_df'i session'a kaydet
+    # orders_df'i session'a kaydet (güncel hali)
     st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
 
     # Seçili satırları sil
