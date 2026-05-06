@@ -1135,6 +1135,18 @@ def process_and_render(df, source_label=""):
     st.markdown("#### 📋 İşlenmiş Siparişler")
     st.markdown("""<style>
     [data-testid="stDataEditor"] td, [data-testid="stDataEditor"] th { font-size: 12px !important; }
+    [data-testid="stDataEditor"] th:nth-child(1),
+    [data-testid="stDataEditor"] td:nth-child(1),
+    [data-testid="stDataEditor"] th:nth-child(2),
+    [data-testid="stDataEditor"] td:nth-child(2),
+    [data-testid="stDataEditor"] th:nth-child(7),
+    [data-testid="stDataEditor"] td:nth-child(7),
+    [data-testid="stDataEditor"] th:nth-child(11),
+    [data-testid="stDataEditor"] td:nth-child(11) {
+        min-width: 40px !important;
+        max-width: 60px !important;
+        width: 60px !important;
+    }
     </style>""", unsafe_allow_html=True)
     st.caption("Tablodaki hücreleri tıklayarak düzenleyebilirsiniz. Düzenledikten sonra o satır için çıktı alabilirsiniz.")
 
@@ -1170,15 +1182,15 @@ def process_and_render(df, source_label=""):
         hide_index=True,
         column_config={
             'Seç':              st.column_config.CheckboxColumn('Seç', width='small'),
-            '⚡':               st.column_config.TextColumn('', width='small'),
+            '⚡':               st.column_config.TextColumn('', width='small', max_chars=2),
             'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
             'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
             'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='small'),
             'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','MAT SARI','ROSE','MAT ROSE',''], width='small'),
             'Genişlik':         st.column_config.SelectboxColumn('Genişlik', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
             'Ölçü':             st.column_config.TextColumn('Ölçü', width='small'),
-            'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='medium'),
-            'Özel Not':         st.column_config.TextColumn('Özel Not', width='medium'),
+            'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='large'),
+            'Özel Not':         st.column_config.TextColumn('Özel Not', width='small'),
             'Durum':            st.column_config.TextColumn('Durum', width='small'),
             'Etiket':           st.column_config.TextColumn('Etiket', width='small'),
         }
