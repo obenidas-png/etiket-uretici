@@ -524,7 +524,7 @@ def parse_csv(df):
             orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                 'Müşteri': row.get('Alıcı', ''), 'Genişlik': '', 'Renk': color, 'Model': product_clean,
                 'Ölçü': olcu, 'Kişiselleştirme': props.get('Personalization', ''),
-                'Özel Not': '', 'Durum': '', 'Etiket': str(row.get('_Label','YOK')), 'Ürün': product_clean})
+                'Özel Not': '', 'Durum': '', 'Etiket': ('VAR' if str(row.get('_Label','')).strip() == 'VAR' else 'YOK'), 'Ürün': product_clean})
         else:
             model = ''
             color = ''
@@ -564,14 +564,14 @@ def parse_csv(df):
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width1, 'Renk': color, 'Model': model,
                         'Ölçü': size1, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': _ozel1, 'Durum': _durum1, 'Etiket': str(row.get('_Label','YOK')), 'Ürün': product})
+                        'Özel Not': _ozel1, 'Durum': _durum1, 'Etiket': ('VAR' if str(row.get('_Label','')).strip() == 'VAR' else 'YOK'), 'Ürün': product})
                 if size2:
                     _ozel2 = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                     _durum2 = str(row.get('_Tags','')) if str(row.get('_Tags','')) not in ['','None'] else ''
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width2, 'Renk': color, 'Model': model,
                         'Ölçü': size2, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': _ozel2, 'Durum': _durum2, 'Etiket': str(row.get('_Label','YOK')), 'Ürün': product})
+                        'Özel Not': _ozel2, 'Durum': _durum2, 'Etiket': ('VAR' if str(row.get('_Label','')).strip() == 'VAR' else 'YOK'), 'Ürün': product})
             else:
                 _ozel = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                 _durum = str(row.get('_Tags','')) if str(row.get('_Tags','')) not in ['','None'] else ''
@@ -579,7 +579,7 @@ def parse_csv(df):
                     'Müşteri': row.get('Alıcı', ''), 'Genişlik': width.upper() if width else '',
                     'Renk': color, 'Model': model.upper() if model else '', 'Ölçü': ring_size,
                     'Kişiselleştirme': props.get('Personalization', ''),
-                    'Özel Not': _ozel, 'Durum': _durum, 'Etiket': str(row.get('_Label','YOK')), 'Ürün': product})
+                    'Özel Not': _ozel, 'Durum': _durum, 'Etiket': ('VAR' if str(row.get('_Label','')).strip() == 'VAR' else 'YOK'), 'Ürün': product})
 
     siparis_sayilari = pd.Series([o['Sipariş No'] for o in orders])
     tekrar_edenler = set(siparis_sayilari[siparis_sayilari.duplicated(keep=False)].tolist())
