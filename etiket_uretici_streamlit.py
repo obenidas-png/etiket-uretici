@@ -177,6 +177,19 @@ def fetch_pending_orders_for_store(store_code):
         st.warning(f"{store_code}: Bekleyen sipariş bulunamadı.")
         return pd.DataFrame()
 
+    # Daha önce etiket basılanları çıkar
+    printed_ids = get_printed_order_ids()
+    if printed_ids:
+        before = len(all_pending)
+        all_pending = [o for o in all_pending if str(o.get("order_id","")) not in printed_ids]
+        filtered = before - len(all_pending)
+        if filtered > 0:
+            st.info(f"{store_code}: {filtered} sipariş daha önce etiket basıldığı için listeden çıkarıldı.")
+
+    if not all_pending:
+        st.warning(f"{store_code}: Tüm siparişlerin etiketi daha önce basılmış.")
+        return pd.DataFrame()
+
     df = api_orders_to_df(all_pending, store_code)
     return df
 
@@ -326,6 +339,47 @@ def load_orders_to_session(orders_df):
     except Exception as e:
         st.error(f"Sheet hatası: {e}")
         return False
+
+
+def get_printed_sheet():
+    sheet = get_gsheet()
+    if sheet is None:
+        return None
+    try:
+        ss = sheet.spreadsheet
+        try:
+            return ss.worksheet("BasilanEtiketler")
+        except:
+            ws = ss.add_worksheet(title="BasilanEtiketler", rows=5000, cols=3)
+            ws.append_row(["SiparişNo", "Mağaza", "Tarih"])
+            return ws
+    except:
+        return None
+
+
+def save_printed_orders(siparis_nos, magaza):
+    ws = get_printed_sheet()
+    if ws is None:
+        return False
+    try:
+        istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
+        rows = [[str(no), magaza, istanbul_now] for no in siparis_nos]
+        ws.append_rows(rows)
+        return True
+    except:
+        return False
+
+
+@st.cache_data(ttl=300)
+def get_printed_order_ids():
+    ws = get_printed_sheet()
+    if ws is None:
+        return set()
+    try:
+        data = ws.get_all_values()
+        return set(str(r[0]) for r in data[1:] if r)
+    except:
+        return set()
 
 
 def mark_as_problematic(siparis_no, musteri, magaza, genislik, model, olcu, not_text, durum, kullanici):
@@ -1127,12 +1181,10 @@ def process_and_render(df, source_label=""):
         }
     )
 
-    # Düzenlenmiş değerleri orders_df'e yansıt (yeni satırlar dahil)
+    # Düzenlenmiş değerleri orders_df'e hemen yansıt ve session'a kaydet
     edited_data = edited_df.drop(columns=['Seç', '⚡'], errors='ignore').reset_index(drop=True)
     if len(edited_data) > len(orders_df):
-        # Yeni satırlar eklendi, orders_df'i genişlet
         extra = len(edited_data) - len(orders_df)
-        template = orders_df.iloc[0].copy() if len(orders_df) > 0 else {}
         for _ in range(extra):
             empty = {c: '' for c in orders_df.columns}
             empty['Çoklu'] = False
@@ -1141,6 +1193,20 @@ def process_and_render(df, source_label=""):
     for col in available_data_cols:
         if col in edited_data.columns:
             orders_df[col] = edited_data[col].values
+
+    # Her değişiklikte session'a kaydet
+    st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
+
+    # Seçili satırları belirle
+    selected_mask = edited_df['Seç'] == True
+    selected_indices = edited_df.index[selected_mask].tolist()
+
+    # Seçili satırlar için etiket basıldı — otomatik sheet'e kaydet
+    if selected_indices:
+        magaza = orders_df['Mağaza'].iloc[0] if 'Mağaza' in orders_df.columns and len(orders_df) > 0 else ''
+        siparis_nos = [str(orders_df.iloc[i].get('Sipariş No','')) for i in selected_indices if str(orders_df.iloc[i].get('Sipariş No','')) not in ['','nan']]
+        if siparis_nos:
+            st.session_state[f"pending_print_{source_label}"] = (siparis_nos, magaza)
 
     # Özet
     gecildi_count = orders_df['Durum'].apply(
@@ -1154,13 +1220,6 @@ def process_and_render(df, source_label=""):
     with c3: st.metric("Farklı Model", orders_df['Model'].nunique())
     with c4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
     with c5: st.metric("✅ Geçildi", int(gecildi_count))
-
-    # orders_df'i session'a kaydet (güncel hali)
-    st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
-
-    # Seçili satırları sil
-    selected_mask = edited_df['Seç'] == True
-    selected_indices = edited_df.index[selected_mask].tolist()
     if selected_indices:
         if st.button(f"🗑️ Seçili {len(selected_indices)} satırı sil", key=f"del_rows_{source_label}", type="secondary"):
             orders_df = orders_df.drop(index=selected_indices).reset_index(drop=True)
@@ -1180,6 +1239,11 @@ def process_and_render(df, source_label=""):
             st.session_state[f"sel_indices_{source_label}"] = selected_indices
             if f"files_sel_{source_label}" in st.session_state:
                 del st.session_state[f"files_sel_{source_label}"]
+            # Etiket basılan siparişleri Sheet'e kaydet
+            if f"pending_print_{source_label}" in st.session_state:
+                nos, mag = st.session_state[f"pending_print_{source_label}"]
+                save_printed_orders(nos, mag)
+                del st.session_state[f"pending_print_{source_label}"]
     with btn_col2:
         if st.button("🚀 Tüm Listeden Dosya Oluştur", type="primary", key=f"all_{source_label}",
                      use_container_width=True):
