@@ -257,6 +257,7 @@ def api_orders_to_df(orders, store_code="CPQ"):
                 "_OrderTotal":     o.get("total_price") or 0,
                 "_MyNote":         str(o.get("my_note") or ""),
                 "_Tags":           str(o.get("tags") or ""),
+                "_Label":          str(o.get("se_tracking_number") or o.get("activeLabelTrackingNumber") or ""),
             })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
