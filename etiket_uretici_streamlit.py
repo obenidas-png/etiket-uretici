@@ -160,9 +160,10 @@ def fetch_pending_orders_for_store(store_code):
                 break
 
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
-            # Debug: etiket alanlarını göster
-            for o in pending[:2]:
-                st.write(f"order_id: {o.get('order_id')} | se_tracking: {repr(o.get('se_tracking_number'))} | activeLabelTracking: {repr(o.get('activeLabelTrackingNumber'))} | activeLabelUrl: {repr(o.get('activeLabelUrl'))} | shipentegra_label: {repr(o.get('shipentegra_label'))}")
+            for o in orders:
+                if str(o.get('order_id','')) == '4054265283':
+                    label_fields = {k: v for k, v in o.items() if 'label' in k.lower() or 'track' in k.lower() or 'etiket' in k.lower()}
+                    st.write(f"4054265283 etiket alanları: {label_fields}")
             all_pending.extend(pending)
 
             if len(orders) < 100:
