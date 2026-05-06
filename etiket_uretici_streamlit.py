@@ -235,6 +235,7 @@ def api_orders_to_df(orders, store_code="CPQ"):
                     "_OrderTotal":     o.get("total_price") or 0,
                     "_MyNote":         str(o.get("my_note") or ""),
                     "_Tags":           str(o.get("tags") or ""),
+                    "_Label":          "VAR" if (o.get("se_tracking_number") or o.get("activeLabelTrackingNumber") or o.get("seo_id")) else "YOK",
                 })
         else:
             # Tüm variation gruplarını birleştir (tek satır)
@@ -523,7 +524,7 @@ def parse_csv(df):
             orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                 'Müşteri': row.get('Alıcı', ''), 'Genişlik': '', 'Renk': color, 'Model': product_clean,
                 'Ölçü': olcu, 'Kişiselleştirme': props.get('Personalization', ''),
-                'Özel Not': '', 'Durum': '', 'Ürün': product_clean})
+                'Özel Not': '', 'Durum': '', 'Etiket': str(row.get('_Label','YOK')), 'Ürün': product_clean})
         else:
             model = ''
             color = ''
@@ -563,14 +564,14 @@ def parse_csv(df):
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width1, 'Renk': color, 'Model': model,
                         'Ölçü': size1, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': _ozel1, 'Durum': _durum1, 'Ürün': product})
+                        'Özel Not': _ozel1, 'Durum': _durum1, 'Etiket': str(row.get('_Label','YOK')), 'Ürün': product})
                 if size2:
                     _ozel2 = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                     _durum2 = str(row.get('_Tags','')) if str(row.get('_Tags','')) not in ['','None'] else ''
                     orders.append({'Mağaza': store_code, 'Sipariş No': row.get('SiparişNumarası', ''),
                         'Müşteri': row.get('Alıcı', ''), 'Genişlik': width2, 'Renk': color, 'Model': model,
                         'Ölçü': size2, 'Kişiselleştirme': props.get('Personalization', ''),
-                        'Özel Not': _ozel2, 'Durum': _durum2, 'Ürün': product})
+                        'Özel Not': _ozel2, 'Durum': _durum2, 'Etiket': str(row.get('_Label','YOK')), 'Ürün': product})
             else:
                 _ozel = '' if str(row.get('_Tags','')) == '1' else str(row.get('_MyNote', '') or '')
                 _durum = str(row.get('_Tags','')) if str(row.get('_Tags','')) not in ['','None'] else ''
@@ -578,7 +579,7 @@ def parse_csv(df):
                     'Müşteri': row.get('Alıcı', ''), 'Genişlik': width.upper() if width else '',
                     'Renk': color, 'Model': model.upper() if model else '', 'Ölçü': ring_size,
                     'Kişiselleştirme': props.get('Personalization', ''),
-                    'Özel Not': _ozel, 'Durum': _durum, 'Ürün': product})
+                    'Özel Not': _ozel, 'Durum': _durum, 'Etiket': str(row.get('_Label','YOK')), 'Ürün': product})
 
     siparis_sayilari = pd.Series([o['Sipariş No'] for o in orders])
     tekrar_edenler = set(siparis_sayilari[siparis_sayilari.duplicated(keep=False)].tolist())
@@ -1136,7 +1137,7 @@ def process_and_render(df, source_label=""):
     </style>""", unsafe_allow_html=True)
     st.caption("Tablodaki hücreleri tıklayarak düzenleyebilirsiniz. Düzenledikten sonra o satır için çıktı alabilirsiniz.")
 
-    edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not', 'Durum']
+    edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not', 'Durum', 'Etiket']
     available_data_cols = [c for c in edit_cols[1:] if c in orders_df.columns]
 
     # Satır ekle butonu
@@ -1178,6 +1179,7 @@ def process_and_render(df, source_label=""):
             'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='medium'),
             'Özel Not':         st.column_config.TextColumn('Özel Not', width='medium'),
             'Durum':            st.column_config.TextColumn('Durum', width='small'),
+            'Etiket':           st.column_config.TextColumn('Etiket', width='small'),
         }
     )
 
