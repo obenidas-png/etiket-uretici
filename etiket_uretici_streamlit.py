@@ -160,10 +160,6 @@ def fetch_pending_orders_for_store(store_code):
                 break
 
             pending = [o for o in orders if (str(o.get("status", "")) == "2" or str(o.get("my_status", "")) == "2") and is_valid_order(o)]
-            for o in orders:
-                if str(o.get('order_id','')) == '4054265283':
-                    label_fields = {k: v for k, v in o.items() if 'label' in k.lower() or 'track' in k.lower() or 'etiket' in k.lower()}
-                    st.write(f"4054265283 etiket alanları: {label_fields}")
             all_pending.extend(pending)
 
             if len(orders) < 100:
@@ -239,7 +235,7 @@ def api_orders_to_df(orders, store_code="CPQ"):
                     "_OrderTotal":     o.get("total_price") or 0,
                     "_MyNote":         str(o.get("my_note") or ""),
                     "_Tags":           str(o.get("tags") or ""),
-                    "_Label":          str(o.get("se_tracking_number") or o.get("activeLabelTrackingNumber") or ""),
+                    "_Label":          str(o.get("my_tracking_number") or o.get("se_tracking_number") or o.get("activeLabelTrackingNumber") or ""),
                 })
         else:
             # Tüm variation gruplarını birleştir (tek satır)
@@ -261,7 +257,7 @@ def api_orders_to_df(orders, store_code="CPQ"):
                 "_OrderTotal":     o.get("total_price") or 0,
                 "_MyNote":         str(o.get("my_note") or ""),
                 "_Tags":           str(o.get("tags") or ""),
-                "_Label":          str(o.get("se_tracking_number") or o.get("activeLabelTrackingNumber") or ""),
+                "_Label":          str(o.get("my_tracking_number") or o.get("se_tracking_number") or o.get("activeLabelTrackingNumber") or ""),
             })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
