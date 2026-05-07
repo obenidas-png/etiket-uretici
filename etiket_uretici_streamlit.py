@@ -367,33 +367,16 @@ def get_siparis_sheet():
 
 
 def push_to_siparis_sheet(orders_df):
-    """orders_df'i Siparişler sayfasına yazar. Mevcut sipariş no'ları günceller, yenileri ekler."""
+    """orders_df'i Siparişler sayfasına yazar. Önceki çekim silinir, yeni veri yazılır."""
     ws = get_siparis_sheet()
     if ws is None:
         return False, 0, 0
-    # Dropdown'ları her yazımda güncelle (ilk kurulum ve sonraki güncellemeler için)
     setup_siparis_sheet_validation(ws)
     try:
-        existing = ws.get_all_values()
-        if len(existing) <= 1:
-            existing_keys = set()
-            existing_rows = {}
-        else:
-            headers = existing[0]
-            no_idx = headers.index("Sipariş No") if "Sipariş No" in headers else 0
-            olcu_idx = headers.index("Ölçü") if "Ölçü" in headers else 5
-            gen_idx = headers.index("Genişlik") if "Genişlik" in headers else 3
-            existing_keys = set(str(r[no_idx]) + "_" + str(r[olcu_idx]) + "_" + str(r[gen_idx]) for r in existing[1:] if r)
-            existing_rows = {str(r[no_idx]) + "_" + str(r[olcu_idx]) + "_" + str(r[gen_idx]): i+2 for i, r in enumerate(existing[1:]) if r}
-
-        new_rows = []
-        updated = 0
-        added = 0
-
+        istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
+        rows = []
         for _, row in orders_df.iterrows():
-            key = str(row.get("Sipariş No","")) + "_" + str(row.get("Ölçü","")) + "_" + str(row.get("Genişlik",""))
-            istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
-            r = [
+            rows.append([
                 str(row.get("Sipariş No","")),
                 str(row.get("Müşteri","")),
                 str(row.get("Mağaza","")),
@@ -406,18 +389,20 @@ def push_to_siparis_sheet(orders_df):
                 str(row.get("Durum","")),
                 str(row.get("Etiket","")),
                 istanbul_now,
-            ]
-            if key in existing_rows:
-                ws.update(f"A{existing_rows[key]}", [r])
-                updated += 1
-            elif key not in existing_keys:
-                new_rows.append(r)
-                added += 1
+            ])
 
-        if new_rows:
-            ws.append_rows(new_rows)
+        # Mevcut verileri temizle (başlık satırı hariç)
+        ws.resize(rows=max(len(rows) + 10, 100))
+        # Başlıktan sonraki tüm satırları sil
+        existing = ws.get_all_values()
+        if len(existing) > 1:
+            ws.delete_rows(2, len(existing))
 
-        return True, added, updated
+        # Yeni verileri yaz
+        if rows:
+            ws.append_rows(rows)
+
+        return True, len(rows), 0
     except Exception as e:
         return False, 0, 0
 
@@ -1289,11 +1274,22 @@ def process_and_render(df, source_label=""):
     st.success(f"✅ {len(orders_df)} sipariş işlendi!{coklu_text} {source_label}")
 
     with st.spinner("Siparişler Sheets'e yazılıyor..."):
-        ok, added, updated = push_to_siparis_sheet(orders_df)
+        # Tüm mağazaların df'lerini birleştir
+        all_dfs = []
+        for sc in ["CPQ", "FRY", "CRSS"]:
+            sk = f"orders_df_api_{sc}"
+            if sk in st.session_state and st.session_state[sk] is not None:
+                all_dfs.append(st.session_state[sk])
+        # Şu anki df de dahil
+        all_dfs.append(orders_df)
+        merged = pd.concat(all_dfs, ignore_index=True).drop_duplicates(
+            subset=["Sipariş No","Ölçü","Genişlik"], keep="last"
+        ) if all_dfs else orders_df
+        ok, added, updated = push_to_siparis_sheet(merged)
         if not ok:
             st.warning("⚠️ Google Sheets bağlantısı kurulamadı.")
         else:
-            st.success(f"✅ {added} yeni sipariş eklendi, {updated} sipariş güncellendi.")
+            st.success(f"✅ {added} sipariş Sheets'e yazıldı.")
 
     st.markdown("#### 📋 İşlenmiş Siparişler")
     st.markdown("""<style>
