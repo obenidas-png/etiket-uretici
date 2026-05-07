@@ -1320,6 +1320,23 @@ def process_and_render(df, source_label=""):
         st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
         st.rerun()
 
+    # editor state'ten güncel veriyi al (düzenlemeler kaybolmasın)
+    editor_state_key = f"editor_{source_label}"
+    if editor_state_key in st.session_state and st.session_state[editor_state_key] is not None:
+        editor_state = st.session_state[editor_state_key]
+        if hasattr(editor_state, 'get') and "edited_rows" in str(type(editor_state)):
+            pass  # Streamlit internal state, ignore
+        elif isinstance(editor_state, dict) and "edited_rows" in editor_state:
+            # Apply edits from internal state to orders_df
+            edited_rows = editor_state.get("edited_rows", {})
+            for idx_str, changes in edited_rows.items():
+                idx = int(idx_str)
+                if idx < len(orders_df):
+                    for col, val in changes.items():
+                        if col in orders_df.columns:
+                            orders_df.at[idx, col] = val
+            st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
+
     display_df = orders_df[available_data_cols].copy().reset_index(drop=True)
     display_df.insert(0, 'Seç', False)
     # Çiftli / GEÇİLDİ işareti
@@ -1333,11 +1350,12 @@ def process_and_render(df, source_label=""):
     icons = display_df.apply(row_icon, axis=1)
     display_df.insert(1, '⚡', icons.values)
 
+    editor_key = f"editor_{source_label}"
     edited_df = st.data_editor(
         display_df,
         use_container_width=True,
         num_rows="fixed",
-        key=f"editor_{source_label}",
+        key=editor_key,
         hide_index=True,
         column_config={
             'Seç':              st.column_config.CheckboxColumn('✓', width='small'),
@@ -1347,7 +1365,7 @@ def process_and_render(df, source_label=""):
             'Mağaza':           st.column_config.TextColumn('Mağaza', width='small'),
             'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='small'),
             'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','MAT SARI','ROSE','MAT ROSE',''], width='small'),
-            'Genişlik':         st.column_config.SelectboxColumn('Gen.', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
+            'Genişlik':         st.column_config.SelectboxColumn('Gen.', options=['1MM','2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
             'Ölçü':             st.column_config.TextColumn('Ölçü', width='small'),
             'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='large'),
             'Özel Not':         st.column_config.TextColumn('Özel Not', width='small'),
@@ -1356,11 +1374,10 @@ def process_and_render(df, source_label=""):
         }
     )
 
-    # Düzenlenmiş değerleri orders_df'e hemen yansıt ve session'a kaydet
+    # edited_df'i direkt orders_df'e yansıt — her render'da
     edited_data = edited_df.drop(columns=['Seç', '⚡'], errors='ignore').reset_index(drop=True)
     if len(edited_data) > len(orders_df):
-        extra = len(edited_data) - len(orders_df)
-        for _ in range(extra):
+        for _ in range(len(edited_data) - len(orders_df)):
             empty = {c: '' for c in orders_df.columns}
             empty['Çoklu'] = False
             orders_df = pd.concat([orders_df, pd.DataFrame([empty])], ignore_index=True)
@@ -1369,7 +1386,7 @@ def process_and_render(df, source_label=""):
         if col in edited_data.columns:
             orders_df[col] = edited_data[col].values
 
-    # Her değişiklikte session'a kaydet
+    # Session'a kaydet — bir sonraki render'da bu df kullanılacak
     st.session_state[f"orders_df_{source_label}"] = orders_df.copy()
 
     # Seçili satırları belirle
