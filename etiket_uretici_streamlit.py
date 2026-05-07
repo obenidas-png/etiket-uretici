@@ -1309,7 +1309,7 @@ def process_and_render(df, source_label=""):
     </style>""", unsafe_allow_html=True)
     st.caption("Tablodaki hücreleri tıklayarak düzenleyebilirsiniz. Düzenledikten sonra o satır için çıktı alabilirsiniz.")
 
-    edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not', 'Durum', 'Etiket']
+    edit_cols = ['Seç', 'Sipariş No', 'Müşteri', 'Mağaza', 'Model', 'Renk', 'Genişlik', 'Ölçü', 'Kişiselleştirme', 'Özel Not', 'Durum', 'Etiket']
     available_data_cols = [c for c in edit_cols[1:] if c in orders_df.columns]
 
     # Satır ekle butonu
@@ -1344,6 +1344,7 @@ def process_and_render(df, source_label=""):
             '⚡':               st.column_config.TextColumn('', width='small', max_chars=2),
             'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
             'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
+            'Mağaza':           st.column_config.TextColumn('Mağaza', width='small'),
             'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='small'),
             'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','MAT SARI','ROSE','MAT ROSE',''], width='small'),
             'Genişlik':         st.column_config.SelectboxColumn('Gen.', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
