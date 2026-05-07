@@ -1567,11 +1567,18 @@ with tab1:
         with col_sh1:
 
             days_map = {"Son 1 gün": 1, "Son 3 gün": 3, "Son 7 gün": 7, "Tümü": None}
-            days_sel = st.selectbox("Tarih filtresi", list(days_map.keys()), key="sheets_days_filter")
+            filter_col1, filter_col2 = st.columns(2)
+            with filter_col1:
+                days_sel = st.selectbox("Tarih filtresi", list(days_map.keys()), key="sheets_days_filter")
+            with filter_col2:
+                magaza_sel = st.selectbox("Mağaza filtresi", ["Tümü", "CPQ", "FRY", "CRSS"], key="sheets_magaza_filter")
+
             if st.button("📥 Siparişler Sayfasını Yükle", key="load_from_sheets", type="primary", use_container_width=True):
                 with st.spinner("Sheets'ten yükleniyor..."):
                     sheets_df = load_from_siparis_sheet(days=days_map[days_sel])
                 if sheets_df is not None and not sheets_df.empty:
+                    if magaza_sel != "Tümü" and "Mağaza" in sheets_df.columns:
+                        sheets_df = sheets_df[sheets_df["Mağaza"] == magaza_sel].reset_index(drop=True)
                     st.session_state["sheets_df"] = sheets_df
                     st.session_state["sheets_ready"] = True
                     st.rerun()
