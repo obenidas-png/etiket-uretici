@@ -343,6 +343,97 @@ def load_orders_to_session(orders_df):
         return False
 
 
+SIPARIS_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Renk", "Model", "Ölçü",
+               "Kişiselleştirme", "Özel Not", "Durum", "Etiket"]
+
+
+def get_siparis_sheet():
+    """Siparişler sayfasını döndürür, yoksa oluşturur."""
+    sheet = get_gsheet()
+    if sheet is None:
+        return None
+    try:
+        ss = sheet.spreadsheet
+        try:
+            return ss.worksheet("Siparişler")
+        except:
+            ws = ss.add_worksheet(title="Siparişler", rows=5000, cols=len(SIPARIS_COLS))
+            ws.append_row(SIPARIS_COLS)
+            return ws
+    except:
+        return None
+
+
+def push_to_siparis_sheet(orders_df):
+    """orders_df'i Siparişler sayfasına yazar. Mevcut sipariş no'ları günceller, yenileri ekler."""
+    ws = get_siparis_sheet()
+    if ws is None:
+        return False, 0, 0
+    try:
+        existing = ws.get_all_values()
+        if len(existing) <= 1:
+            existing_keys = set()
+            existing_rows = {}
+        else:
+            headers = existing[0]
+            no_idx = headers.index("Sipariş No") if "Sipariş No" in headers else 0
+            olcu_idx = headers.index("Ölçü") if "Ölçü" in headers else 5
+            existing_keys = set(str(r[no_idx]) + "_" + str(r[olcu_idx]) for r in existing[1:] if r)
+            existing_rows = {str(r[no_idx]) + "_" + str(r[olcu_idx]): i+2 for i, r in enumerate(existing[1:]) if r}
+
+        new_rows = []
+        updated = 0
+        added = 0
+
+        for _, row in orders_df.iterrows():
+            key = str(row.get("Sipariş No","")) + "_" + str(row.get("Ölçü",""))
+            r = [
+                str(row.get("Sipariş No","")),
+                str(row.get("Müşteri","")),
+                str(row.get("Mağaza","")),
+                str(row.get("Genişlik","")),
+                str(row.get("Renk","")),
+                str(row.get("Model","")),
+                str(row.get("Ölçü","")),
+                str(row.get("Kişiselleştirme","")),
+                str(row.get("Özel Not","")),
+                str(row.get("Durum","")),
+                str(row.get("Etiket","")),
+            ]
+            if key in existing_rows:
+                ws.update(f"A{existing_rows[key]}", [r])
+                updated += 1
+            elif key not in existing_keys:
+                new_rows.append(r)
+                added += 1
+
+        if new_rows:
+            ws.append_rows(new_rows)
+
+        return True, added, updated
+    except Exception as e:
+        return False, 0, 0
+
+
+def load_from_siparis_sheet():
+    """Siparişler sayfasından veri çeker, DataFrame döndürür."""
+    ws = get_siparis_sheet()
+    if ws is None:
+        return None
+    try:
+        data = ws.get_all_values()
+        if len(data) <= 1:
+            return pd.DataFrame(columns=SIPARIS_COLS)
+        headers = data[0]
+        rows = data[1:]
+        df = pd.DataFrame(rows, columns=headers)
+        # Boş satırları çıkar
+        df = df[df["Sipariş No"].str.strip() != ""].reset_index(drop=True)
+        return df
+    except:
+        return None
+
+
 def get_printed_sheet():
     sheet = get_gsheet()
     if sheet is None:
@@ -1107,6 +1198,9 @@ def process_and_render(df, source_label=""):
     session_key = f"orders_df_{source_label}"
     if session_key in st.session_state:
         orders_df = st.session_state[session_key]
+    elif source_label == "sheets" and f"orders_df_sheets" in st.session_state:
+        orders_df = st.session_state["orders_df_sheets"]
+        st.session_state[session_key] = orders_df.copy()
     else:
         with st.spinner("Siparişler işleniyor..."):
             orders_df = parse_csv(df)
@@ -1125,12 +1219,12 @@ def process_and_render(df, source_label=""):
     coklu_text = f" ({int(coklu_count)} çiftli sipariş)" if coklu_count > 0 else ""
     st.success(f"✅ {len(orders_df)} sipariş işlendi!{coklu_text} {source_label}")
 
-    with st.spinner("Sipariş listesi güncelleniyor..."):
-        sonuc = load_orders_to_session(orders_df)
-        if sonuc is False:
+    with st.spinner("Siparişler Sheets'e yazılıyor..."):
+        ok, added, updated = push_to_siparis_sheet(orders_df)
+        if not ok:
             st.warning("⚠️ Google Sheets bağlantısı kurulamadı.")
         else:
-            st.success(f"✅ {sonuc} yeni sipariş takip listesine eklendi.")
+            st.success(f"✅ {added} yeni sipariş eklendi, {updated} sipariş güncellendi.")
 
     st.markdown("#### 📋 İşlenmiş Siparişler")
     st.markdown("""<style>
@@ -1181,17 +1275,17 @@ def process_and_render(df, source_label=""):
         key=f"editor_{source_label}",
         hide_index=True,
         column_config={
-            'Seç':              st.column_config.CheckboxColumn('Seç', width='small'),
+            'Seç':              st.column_config.CheckboxColumn('✓', width='small'),
             '⚡':               st.column_config.TextColumn('', width='small', max_chars=2),
             'Sipariş No':       st.column_config.TextColumn('Sipariş No', width='small'),
             'Müşteri':          st.column_config.TextColumn('Müşteri', width='small'),
             'Model':            st.column_config.SelectboxColumn('Model', options=['BOMBE','ÇATI','ÇATI MAT','DÜZ','TEKTAŞ','FANTAZİ','YENİLEME',''], width='small'),
             'Renk':             st.column_config.SelectboxColumn('Renk', options=['BEYAZ','MAT BEYAZ','SARI','MAT SARI','ROSE','MAT ROSE',''], width='small'),
-            'Genişlik':         st.column_config.SelectboxColumn('Genişlik', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
+            'Genişlik':         st.column_config.SelectboxColumn('Gen.', options=['2MM','3MM','4MM','5MM','6MM','7MM','8MM',''], width='small'),
             'Ölçü':             st.column_config.TextColumn('Ölçü', width='small'),
             'Kişiselleştirme':  st.column_config.TextColumn('Kişiselleştirme', width='large'),
             'Özel Not':         st.column_config.TextColumn('Özel Not', width='small'),
-            'Durum':            st.column_config.TextColumn('Durum', width='small'),
+            'Durum':            st.column_config.TextColumn('Drm.', width='small'),
             'Etiket':           st.column_config.TextColumn('Etiket', width='small'),
         }
     )
@@ -1382,6 +1476,45 @@ with tab1:
                     except Exception as e:
                         st.error(f"İşleme hatası: {e}")
                 st.markdown("---")
+
+        # ── Sheets'ten yükle ─────────────────────────────
+        st.markdown("### 📋 Google Sheets'ten Yükle")
+        st.caption("Sheets'te düzenledikten sonra buradan çıktı alabilirsiniz.")
+        col_sh1, col_sh2 = st.columns([2,3])
+        with col_sh1:
+            if st.button("📥 Siparişler Sayfasını Yükle", key="load_from_sheets", type="primary", use_container_width=True):
+                with st.spinner("Sheets'ten yükleniyor..."):
+                    sheets_df = load_from_siparis_sheet()
+                if sheets_df is not None and not sheets_df.empty:
+                    st.session_state["sheets_df"] = sheets_df
+                    st.session_state["sheets_ready"] = True
+                    st.rerun()
+                else:
+                    st.warning("Sheets'te veri bulunamadı.")
+        with col_sh2:
+            if st.session_state.get("sheets_ready"):
+                n = len(st.session_state.get("sheets_df", []))
+                st.success(f"✅ {n} satır yüklendi")
+
+        if st.session_state.get("sheets_ready") and st.session_state.get("sheets_df") is not None:
+            with st.expander("📋 Sheets Siparişleri", expanded=True):
+                try:
+                    sheets_df = st.session_state["sheets_df"]
+                    # Çoklu sütunu ekle
+                    if "Çoklu" not in sheets_df.columns:
+                        siparis_sayilari = sheets_df["Sipariş No"]
+                        tekrar = set(siparis_sayilari[siparis_sayilari.duplicated(keep=False)].tolist())
+                        sheets_df["Çoklu"] = sheets_df["Sipariş No"].apply(lambda x: x in tekrar)
+                    if "Mağaza" not in sheets_df.columns:
+                        sheets_df["Mağaza"] = ""
+                    if "Ürün" not in sheets_df.columns:
+                        sheets_df["Ürün"] = ""
+                    st.session_state["orders_df_sheets"] = sheets_df
+                    process_and_render(None, source_label="sheets")
+                except Exception as e:
+                    st.error(f"Hata: {e}")
+
+        st.markdown("---")
 
         # ── Excel / CSV yükleme ──────────────────────────
         st.markdown("### 📂 Excel / CSV Yükle")
