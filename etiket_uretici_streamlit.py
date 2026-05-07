@@ -355,7 +355,8 @@ def get_siparis_sheet():
     try:
         ss = sheet.spreadsheet
         try:
-            return ss.worksheet("Siparişler")
+            ws = ss.worksheet("Siparişler")
+            return ws
         except:
             ws = ss.add_worksheet(title="Siparişler", rows=5000, cols=len(SIPARIS_COLS))
             ws.append_row(SIPARIS_COLS)
@@ -370,6 +371,8 @@ def push_to_siparis_sheet(orders_df):
     ws = get_siparis_sheet()
     if ws is None:
         return False, 0, 0
+    # Dropdown'ları her yazımda güncelle (ilk kurulum ve sonraki güncellemeler için)
+    setup_siparis_sheet_validation(ws)
     try:
         existing = ws.get_all_values()
         if len(existing) <= 1:
@@ -463,9 +466,9 @@ def setup_siparis_sheet_validation(ws):
         validations = [
             # Genişlik (D sütunu = index 3)
             {"col": 3, "values": ["1MM","2MM","3MM","4MM","5MM","6MM","7MM","8MM"]},
-            # Renk (E sütunu = index 4)  
-            {"col": 4, "values": ["BEYAZ","MAT BEYAZ","SARI","MAT SARI","ROSE","MAT ROSE"]},
-            # Model (F sütunu = index 5)
+            # Renk (E sütunu = index 4)
+            {"col": 4, "values": ["BEYAZ","MAT BEYAZ","SARI","MAT SARI","ROSE","MAT ROSE","14K Yellow Gold","14K White Gold","14K Rose Gold","Sterling Silver"]},
+            # Model (F sütunu = index 5) - strict=False serbest metin de girilebilir
             {"col": 5, "values": ["BOMBE","ÇATI","ÇATI MAT","DÜZ","TEKTAŞ","FANTAZİ","YENİLEME"]},
             # Mağaza (C sütunu = index 2)
             {"col": 2, "values": ["CPQ","FRY","CRSS"]},
@@ -489,6 +492,7 @@ def setup_siparis_sheet_validation(ws):
                         },
                         "showCustomUi": True,
                         "strict": False,
+                        "inputMessage": "Listeden seçin veya serbest metin girin",
                     }
                 }
             })
@@ -1548,16 +1552,7 @@ with tab1:
         st.caption("Sheets'te düzenledikten sonra buradan çıktı alabilirsiniz.")
         col_sh1, col_sh2 = st.columns([2,3])
         with col_sh1:
-            col_setup, col_load = st.columns([1,2])
-            with col_setup:
-                if st.button("⚙️ Dropdown Kur", key="setup_validation", use_container_width=True, help="Sheets'te dropdown menüleri kurar"):
-                    ws = get_siparis_sheet()
-                    if ws and setup_siparis_sheet_validation(ws):
-                        st.success("Dropdown'lar kuruldu!")
-                    else:
-                        st.error("Kurulum başarısız.")
-            with col_load:
-                pass
+
             days_map = {"Son 1 gün": 1, "Son 3 gün": 3, "Son 7 gün": 7, "Tümü": None}
             days_sel = st.selectbox("Tarih filtresi", list(days_map.keys()), key="sheets_days_filter")
             if st.button("📥 Siparişler Sayfasını Yükle", key="load_from_sheets", type="primary", use_container_width=True):
