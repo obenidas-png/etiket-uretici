@@ -344,7 +344,7 @@ def load_orders_to_session(orders_df):
 
 
 SIPARIS_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Renk", "Model", "Ölçü",
-               "Kişiselleştirme", "Özel Not", "Durum", "Etiket"]
+               "Kişiselleştirme", "Özel Not", "Durum", "Etiket", "Eklenme Tarihi"]
 
 
 def get_siparis_sheet():
@@ -359,6 +359,7 @@ def get_siparis_sheet():
         except:
             ws = ss.add_worksheet(title="Siparişler", rows=5000, cols=len(SIPARIS_COLS))
             ws.append_row(SIPARIS_COLS)
+            setup_siparis_sheet_validation(ws)
             return ws
     except:
         return None
@@ -378,15 +379,17 @@ def push_to_siparis_sheet(orders_df):
             headers = existing[0]
             no_idx = headers.index("Sipariş No") if "Sipariş No" in headers else 0
             olcu_idx = headers.index("Ölçü") if "Ölçü" in headers else 5
-            existing_keys = set(str(r[no_idx]) + "_" + str(r[olcu_idx]) for r in existing[1:] if r)
-            existing_rows = {str(r[no_idx]) + "_" + str(r[olcu_idx]): i+2 for i, r in enumerate(existing[1:]) if r}
+            gen_idx = headers.index("Genişlik") if "Genişlik" in headers else 3
+            existing_keys = set(str(r[no_idx]) + "_" + str(r[olcu_idx]) + "_" + str(r[gen_idx]) for r in existing[1:] if r)
+            existing_rows = {str(r[no_idx]) + "_" + str(r[olcu_idx]) + "_" + str(r[gen_idx]): i+2 for i, r in enumerate(existing[1:]) if r}
 
         new_rows = []
         updated = 0
         added = 0
 
         for _, row in orders_df.iterrows():
-            key = str(row.get("Sipariş No","")) + "_" + str(row.get("Ölçü",""))
+            key = str(row.get("Sipariş No","")) + "_" + str(row.get("Ölçü","")) + "_" + str(row.get("Genişlik",""))
+            istanbul_now = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y %H:%M")
             r = [
                 str(row.get("Sipariş No","")),
                 str(row.get("Müşteri","")),
@@ -399,6 +402,7 @@ def push_to_siparis_sheet(orders_df):
                 str(row.get("Özel Not","")),
                 str(row.get("Durum","")),
                 str(row.get("Etiket","")),
+                istanbul_now,
             ]
             if key in existing_rows:
                 ws.update(f"A{existing_rows[key]}", [r])
@@ -415,8 +419,8 @@ def push_to_siparis_sheet(orders_df):
         return False, 0, 0
 
 
-def load_from_siparis_sheet():
-    """Siparişler sayfasından veri çeker, DataFrame döndürür."""
+def load_from_siparis_sheet(days=None):
+    """Siparişler sayfasından veri çeker. days=None ise tümünü, days=N ise son N günü döndürür."""
     ws = get_siparis_sheet()
     if ws is None:
         return None
@@ -427,11 +431,72 @@ def load_from_siparis_sheet():
         headers = data[0]
         rows = data[1:]
         df = pd.DataFrame(rows, columns=headers)
-        # Boş satırları çıkar
         df = df[df["Sipariş No"].str.strip() != ""].reset_index(drop=True)
+
+        if days and "Eklenme Tarihi" in df.columns:
+            cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - pd.Timedelta(days=days)
+            def parse_tr_date(s):
+                try:
+                    return datetime.strptime(str(s).strip(), "%d.%m.%Y %H:%M").replace(tzinfo=ZoneInfo("Europe/Istanbul"))
+                except:
+                    return None
+            df["_date"] = df["Eklenme Tarihi"].apply(parse_tr_date)
+            df = df[df["_date"].notna() & (df["_date"] >= cutoff)].drop(columns=["_date"])
+            df = df.reset_index(drop=True)
+
         return df
     except:
         return None
+
+
+def setup_siparis_sheet_validation(ws):
+    """Sheets sütunlarına dropdown validation ekler."""
+    try:
+        from gspread_formatting import DataValidationRule, BooleanCondition, set_data_validation_for_cell_range
+    except ImportError:
+        pass
+    try:
+        # gspread ile batch_update ile validation ekle
+        sheet_id = ws.id
+        spreadsheet_id = ws.spreadsheet.id
+        
+        validations = [
+            # Genişlik (D sütunu = index 3)
+            {"col": 3, "values": ["1MM","2MM","3MM","4MM","5MM","6MM","7MM","8MM"]},
+            # Renk (E sütunu = index 4)  
+            {"col": 4, "values": ["BEYAZ","MAT BEYAZ","SARI","MAT SARI","ROSE","MAT ROSE"]},
+            # Model (F sütunu = index 5)
+            {"col": 5, "values": ["BOMBE","ÇATI","ÇATI MAT","DÜZ","TEKTAŞ","FANTAZİ","YENİLEME"]},
+            # Mağaza (C sütunu = index 2)
+            {"col": 2, "values": ["CPQ","FRY","CRSS"]},
+        ]
+        
+        requests = []
+        for v in validations:
+            requests.append({
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 1,
+                        "endRowIndex": 5000,
+                        "startColumnIndex": v["col"],
+                        "endColumnIndex": v["col"] + 1,
+                    },
+                    "rule": {
+                        "condition": {
+                            "type": "ONE_OF_LIST",
+                            "values": [{"userEnteredValue": val} for val in v["values"]],
+                        },
+                        "showCustomUi": True,
+                        "strict": False,
+                    }
+                }
+            })
+        
+        ws.spreadsheet.batch_update({"requests": requests})
+        return True
+    except Exception as e:
+        return False
 
 
 def get_printed_sheet():
@@ -1482,9 +1547,21 @@ with tab1:
         st.caption("Sheets'te düzenledikten sonra buradan çıktı alabilirsiniz.")
         col_sh1, col_sh2 = st.columns([2,3])
         with col_sh1:
+            col_setup, col_load = st.columns([1,2])
+            with col_setup:
+                if st.button("⚙️ Dropdown Kur", key="setup_validation", use_container_width=True, help="Sheets'te dropdown menüleri kurar"):
+                    ws = get_siparis_sheet()
+                    if ws and setup_siparis_sheet_validation(ws):
+                        st.success("Dropdown'lar kuruldu!")
+                    else:
+                        st.error("Kurulum başarısız.")
+            with col_load:
+                pass
+            days_map = {"Son 1 gün": 1, "Son 3 gün": 3, "Son 7 gün": 7, "Tümü": None}
+            days_sel = st.selectbox("Tarih filtresi", list(days_map.keys()), key="sheets_days_filter")
             if st.button("📥 Siparişler Sayfasını Yükle", key="load_from_sheets", type="primary", use_container_width=True):
                 with st.spinner("Sheets'ten yükleniyor..."):
-                    sheets_df = load_from_siparis_sheet()
+                    sheets_df = load_from_siparis_sheet(days=days_map[days_sel])
                 if sheets_df is not None and not sheets_df.empty:
                     st.session_state["sheets_df"] = sheets_df
                     st.session_state["sheets_ready"] = True
