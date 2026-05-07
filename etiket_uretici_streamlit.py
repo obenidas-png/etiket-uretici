@@ -1495,6 +1495,7 @@ with tab1:
             if st.session_state.get("sheets_ready"):
                 n = len(st.session_state.get("sheets_df", []))
                 st.success(f"✅ {n} satır yüklendi")
+            st.link_button("📊 Sheets'i Aç", url=SHEET_URL, use_container_width=True)
 
         if st.session_state.get("sheets_ready") and st.session_state.get("sheets_df") is not None:
             with st.expander("📋 Sheets Siparişleri", expanded=True):
