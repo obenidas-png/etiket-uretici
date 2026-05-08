@@ -401,12 +401,9 @@ def push_to_siparis_sheet(orders_df):
         # Sayfayı temizle ve yeniden yaz (başlık + veri)
         ws.resize(rows=max(len(rows) + 50, 200))
         ws.batch_clear(["A1:Z2000"])
-        # Başlık satırını yaz
         ws.update("A1", [SIPARIS_COLS])
         if rows:
             ws.update("A2", rows, value_input_option="RAW")
-        # Checkbox validation yenile
-        setup_siparis_sheet_validation(ws)
 
         return True, len(rows), 0
     except Exception as e:
