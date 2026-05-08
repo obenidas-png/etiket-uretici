@@ -391,16 +391,49 @@ def push_to_siparis_sheet(orders_df):
                 istanbul_now,
             ])
 
-        # Mevcut verileri temizle (başlık satırı hariç)
-        ws.resize(rows=max(len(rows) + 10, 100))
-        # Başlıktan sonraki tüm satırları sil
+        # Mevcut verileri çek, 3 günden eskilerini çıkar, yenilerle birleştir
+        from datetime import timedelta
+        cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - timedelta(days=10)  # Sheets'te 10 gün tut
+
         existing = ws.get_all_values()
+        kept_rows = []
+        if len(existing) > 1:
+            headers = existing[0]
+            date_idx = headers.index("Eklenme Tarihi") if "Eklenme Tarihi" in headers else -1
+            no_idx = headers.index("Sipariş No") if "Sipariş No" in headers else 0
+            olcu_idx = headers.index("Ölçü") if "Ölçü" in headers else 6
+            gen_idx = headers.index("Genişlik") if "Genişlik" in headers else 3
+
+            # Yeni siparişlerin key'leri
+            new_keys = set(
+                str(r[0]) + "_" + str(r[6]) + "_" + str(r[3])
+                for r in rows
+            )
+
+            for r in existing[1:]:
+                if not r or not r[no_idx]:
+                    continue
+                # 3 günden eski mi?
+                if date_idx >= 0 and date_idx < len(r):
+                    try:
+                        row_date = datetime.strptime(str(r[date_idx]).strip(), "%d.%m.%Y %H:%M").replace(tzinfo=ZoneInfo("Europe/Istanbul"))
+                        if row_date < cutoff:
+                            continue
+                    except:
+                        pass
+                # Yeni çekimde aynı key var mı? (güncellenir)
+                key = str(r[no_idx]) + "_" + str(r[olcu_idx] if olcu_idx < len(r) else "") + "_" + str(r[gen_idx] if gen_idx < len(r) else "")
+                if key not in new_keys:
+                    kept_rows.append(r)
+
+        all_rows = kept_rows + rows
+
+        # Sayfayı temizle ve yeniden yaz
+        ws.resize(rows=max(len(all_rows) + 10, 100))
         if len(existing) > 1:
             ws.delete_rows(2, len(existing))
-
-        # Yeni verileri yaz
-        if rows:
-            ws.append_rows(rows)
+        if all_rows:
+            ws.append_rows(all_rows)
 
         return True, len(rows), 0
     except Exception as e:
@@ -1567,10 +1600,10 @@ with tab1:
         col_sh1, col_sh2 = st.columns([2,3])
         with col_sh1:
 
-            days_map = {"Son 1 gün": 1, "Son 3 gün": 3, "Son 7 gün": 7, "Tümü": None}
+            days_map = {"Son 3 gün": 3, "Son 5 gün": 5, "Son 7 gün": 7, "Son 10 gün": 10, "Tümü": None}
             filter_col1, filter_col2 = st.columns(2)
             with filter_col1:
-                days_sel = st.selectbox("Tarih filtresi", list(days_map.keys()), key="sheets_days_filter")
+                days_sel = st.selectbox("Tarih filtresi", list(days_map.keys()), index=0, key="sheets_days_filter")
             with filter_col2:
                 magaza_sel = st.selectbox("Mağaza filtresi", ["Tümü", "CPQ", "FRY", "CRSS"], key="sheets_magaza_filter")
 
@@ -1580,11 +1613,19 @@ with tab1:
                 if sheets_df is not None and not sheets_df.empty:
                     if magaza_sel != "Tümü" and "Mağaza" in sheets_df.columns:
                         sheets_df = sheets_df[sheets_df["Mağaza"] == magaza_sel].reset_index(drop=True)
+                    # Daha önce etiket basılanları kontrol et
+                    printed_ids = get_printed_order_ids()
+                    if printed_ids:
+                        overlap = sheets_df[sheets_df["Sipariş No"].astype(str).isin(printed_ids)]
+                        if not overlap.empty:
+                            st.warning(f"⚠️ {len(overlap)} siparişin etiketi daha önce basılmıştı: {', '.join(overlap['Sipariş No'].astype(str).tolist()[:5])}{'...' if len(overlap) > 5 else ''}")
                     st.session_state["sheets_df"] = sheets_df
                     st.session_state["sheets_ready"] = True
                     st.rerun()
+                elif sheets_df is not None and sheets_df.empty:
+                    st.warning("Seçilen kriterlerde veri bulunamadı.")
                 else:
-                    st.warning("Sheets'te veri bulunamadı.")
+                    st.warning("Sheets'e bağlanılamadı.")
         with col_sh2:
             if st.session_state.get("sheets_ready"):
                 n = len(st.session_state.get("sheets_df", []))
