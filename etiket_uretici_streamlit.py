@@ -177,17 +177,16 @@ def fetch_pending_orders_for_store(store_code):
         st.warning(f"{store_code}: Bekleyen sipariş bulunamadı.")
         return pd.DataFrame()
 
-    # Daha önce etiket basılanları çıkar
-    printed_ids = get_printed_order_ids()
-    if printed_ids:
-        before = len(all_pending)
-        all_pending = [o for o in all_pending if str(o.get("order_id","")) not in printed_ids]
-        filtered = before - len(all_pending)
-        if filtered > 0:
-            st.info(f"{store_code}: {filtered} sipariş daha önce etiket basıldığı için listeden çıkarıldı.")
+    # Kargo etiketi basılmış olanları çıkar (shipentegra_label dolu olanlar)
+    before = len(all_pending)
+    all_pending_no_label = [o for o in all_pending if not str(o.get("shipentegra_label","")).strip()]
+    filtered = before - len(all_pending_no_label)
+    if filtered > 0:
+        st.info(f"{store_code}: {filtered} siparişin kargo etiketi zaten basılmış, listeden çıkarıldı.")
+    all_pending = all_pending_no_label
 
     if not all_pending:
-        st.warning(f"{store_code}: Tüm siparişlerin etiketi daha önce basılmış.")
+        st.warning(f"{store_code}: Tüm siparişlerin kargo etiketi basılmış.")
         return pd.DataFrame()
 
     df = api_orders_to_df(all_pending, store_code)
@@ -343,7 +342,7 @@ def load_orders_to_session(orders_df):
         return False
 
 
-SIPARIS_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Renk", "Model", "Ölçü",
+SIPARIS_COLS = ["Seç", "Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Renk", "Model", "Ölçü",
                "Kişiselleştirme", "Özel Not", "Durum", "Etiket", "Eklenme Tarihi"]
 
 
@@ -377,6 +376,7 @@ def push_to_siparis_sheet(orders_df):
         rows = []
         for _, row in orders_df.iterrows():
             rows.append([
+                "FALSE",
                 str(row.get("Sipariş No","")),
                 str(row.get("Müşteri","")),
                 str(row.get("Mağaza","")),
@@ -397,19 +397,19 @@ def push_to_siparis_sheet(orders_df):
         existing = ws.get_all_values()
         kept_rows = []
         new_keys = set(
-            str(r[0]) + "_" + str(r[6]) + "_" + str(r[3])
+            str(r[1]) + "_" + str(r[7]) + "_" + str(r[4])
             for r in rows
         )
 
         if len(existing) > 1:
             headers = existing[0]
             date_idx = headers.index("Eklenme Tarihi") if "Eklenme Tarihi" in headers else -1
-            no_idx = headers.index("Sipariş No") if "Sipariş No" in headers else 0
-            olcu_idx = headers.index("Ölçü") if "Ölçü" in headers else 6
-            gen_idx = headers.index("Genişlik") if "Genişlik" in headers else 3
+            no_idx = headers.index("Sipariş No") if "Sipariş No" in headers else 1
+            olcu_idx = headers.index("Ölçü") if "Ölçü" in headers else 7
+            gen_idx = headers.index("Genişlik") if "Genişlik" in headers else 4
 
             for r in existing[1:]:
-                if not r or not str(r[0]).strip():
+                if not r or not str(r[no_idx] if no_idx < len(r) else "").strip():
                     continue
                 # 10 günden eski mi? çıkar
                 if date_idx >= 0 and date_idx < len(r) and str(r[date_idx]).strip():
@@ -420,7 +420,7 @@ def push_to_siparis_sheet(orders_df):
                     except:
                         pass
                 # Yeni çekimde aynı key var mı? güncellenir, eski tutulmasın
-                key = str(r[no_idx]) + "_" + (str(r[olcu_idx]) if olcu_idx < len(r) else "") + "_" + (str(r[gen_idx]) if gen_idx < len(r) else "")
+                key = str(r[no_idx] if no_idx < len(r) else "") + "_" + (str(r[olcu_idx]) if olcu_idx < len(r) else "") + "_" + (str(r[gen_idx]) if gen_idx < len(r) else "")
                 if key not in new_keys:
                     kept_rows.append(r)
 
@@ -439,8 +439,8 @@ def push_to_siparis_sheet(orders_df):
         return False, 0, 0
 
 
-def load_from_siparis_sheet(days=None):
-    """Siparişler sayfasından veri çeker. days=None ise tümünü, days=N ise son N günü döndürür."""
+def load_from_siparis_sheet(days=None, only_selected=True):
+    """Siparişler sayfasından veri çeker. only_selected=True ise sadece Seç=TRUE olanları döndürür."""
     ws = get_siparis_sheet()
     if ws is None:
         return None
@@ -451,7 +451,13 @@ def load_from_siparis_sheet(days=None):
         headers = data[0]
         rows = data[1:]
         df = pd.DataFrame(rows, columns=headers)
-        df = df[df["Sipariş No"].str.strip() != ""].reset_index(drop=True)
+        if "Sipariş No" in df.columns:
+            df = df[df["Sipariş No"].str.strip() != ""].reset_index(drop=True)
+        # Sadece seçili olanları getir
+        if only_selected and "Seç" in df.columns:
+            df = df[df["Seç"].str.upper().isin(["TRUE", "DOĞRU", "1", "TRUE"])].reset_index(drop=True)
+            if df.empty:
+                return df
 
         if days and "Eklenme Tarihi" in df.columns:
             from datetime import timedelta
@@ -481,15 +487,33 @@ def setup_siparis_sheet_validation(ws):
         sheet_id = ws.id
         spreadsheet_id = ws.spreadsheet.id
         
+        # Seç sütunu için checkbox validation (A sütunu)
+        checkbox_request = {
+            "setDataValidation": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 1,
+                    "endRowIndex": 5000,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 1,
+                },
+                "rule": {
+                    "condition": {"type": "BOOLEAN"},
+                    "showCustomUi": True,
+                    "strict": True,
+                }
+            }
+        }
+
         validations = [
-            # Genişlik (D sütunu = index 3)
-            {"col": 3, "values": ["1MM","2MM","3MM","4MM","5MM","6MM","7MM","8MM"]},
-            # Renk (E sütunu = index 4)
-            {"col": 4, "values": ["BEYAZ","MAT BEYAZ","SARI","MAT SARI","ROSE","MAT ROSE","14K Yellow Gold","14K White Gold","14K Rose Gold","Sterling Silver"]},
-            # Model (F sütunu = index 5) - strict=False serbest metin de girilebilir
-            {"col": 5, "values": ["BOMBE","ÇATI","ÇATI MAT","DÜZ","TEKTAŞ","FANTAZİ","YENİLEME"]},
-            # Mağaza (C sütunu = index 2)
-            {"col": 2, "values": ["CPQ","FRY","CRSS"]},
+            # Genişlik (E sütunu = index 4)
+            {"col": 4, "values": ["1MM","2MM","3MM","4MM","5MM","6MM","7MM","8MM"]},
+            # Renk (F sütunu = index 5)
+            {"col": 5, "values": ["BEYAZ","MAT BEYAZ","SARI","MAT SARI","ROSE","MAT ROSE","14K Yellow Gold","14K White Gold","14K Rose Gold","Sterling Silver"]},
+            # Model (G sütunu = index 6)
+            {"col": 6, "values": ["BOMBE","ÇATI","ÇATI MAT","DÜZ","TEKTAŞ","FANTAZİ","YENİLEME"]},
+            # Mağaza (D sütunu = index 3)
+            {"col": 3, "values": ["CPQ","FRY","CRSS"]},
         ]
         
         requests = []
@@ -515,6 +539,7 @@ def setup_siparis_sheet_validation(ws):
                 }
             })
         
+        requests.insert(0, checkbox_request)
         ws.spreadsheet.batch_update({"requests": requests})
         return True
     except Exception as e:
