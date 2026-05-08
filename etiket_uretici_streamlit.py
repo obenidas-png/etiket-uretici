@@ -1616,6 +1616,63 @@ with tab1:
                         st.error(f"İşleme hatası: {e}")
                 st.markdown("---")
 
+        # ── API Bölümü ───────────────────────────────────
+        st.markdown("### 🔌 API ile Sipariş Getir")
+
+        api_stores = [
+            ("CPQ", "🔵 Chepniq"),
+            ("FRY", "🔴 Foria"),
+            ("CRSS", "🟢 Cerasus"),
+        ]
+
+        api_cols = st.columns(3)
+        for i, (store_code, btn_label) in enumerate(api_stores):
+            with api_cols[i]:
+                if st.button(btn_label + " Siparişlerini Getir", key=f"api_btn_{store_code}", type="primary", use_container_width=True):
+                    for k in list(st.session_state.keys()):
+                        if f"api_{store_code}" in k:
+                            st.session_state.pop(k, None)
+                    with st.spinner(f"{store_code} siparişleri çekiliyor..."):
+                        api_df = fetch_pending_orders_for_store(store_code)
+                    if api_df is not None and not api_df.empty:
+                        st.session_state[f"api_df_{store_code}"] = api_df
+                        st.session_state[f"api_ready_{store_code}"] = True
+                        st.rerun()
+                    elif api_df is not None and api_df.empty:
+                        st.warning(f"{store_code}: Bekleyen sipariş yok.")
+                if st.session_state.get(f"api_ready_{store_code}"):
+                    n = len(st.session_state.get(f"api_df_{store_code}", []))
+                    st.success(f"✅ {n} satır hazır")
+
+        st.markdown("---")
+
+        store_colors = {
+            "CPQ":  ("#1a3a5c", "#d6e4f0"),
+            "FRY":  ("#8b0000", "#f5d5d5"),
+            "CRSS": ("#1a5c2a", "#d5f0dc"),
+        }
+        for store_code, btn_label in api_stores:
+            if st.session_state.get(f"api_ready_{store_code}") and st.session_state.get(f"api_df_{store_code}") is not None:
+                hdr, bg = store_colors.get(store_code, ("#333", "#f5f5f5"))
+                n = len(st.session_state[f"api_df_{store_code}"])
+                st.markdown(
+                    f'''<div style="background:{hdr};color:white;padding:8px 16px;border-radius:8px 8px 0 0;font-weight:600;font-size:15px;margin-bottom:0">
+                    📋 {store_code} Siparişleri &nbsp;<span style="font-weight:400;font-size:13px;opacity:0.85">({n} sipariş)</span></div>
+                    <style>
+                    section[data-testid="stExpander"] div[data-testid="stExpanderDetails"] * {{
+                        color: inherit;
+                    }}
+                    </style>''',
+                    unsafe_allow_html=True
+                )
+                st.markdown(f'<style>div[data-testid="stExpander"] summary p {{ color: {hdr} !important; font-weight: 700 !important; }}</style>', unsafe_allow_html=True)
+                with st.expander(f"📋 {store_code} Siparişleri ({n} sipariş)", expanded=True):
+                    try:
+                        process_and_render(st.session_state[f"api_df_{store_code}"], source_label=f"api_{store_code}")
+                    except Exception as e:
+                        st.error(f"İşleme hatası: {e}")
+                st.markdown("---")
+
         # ── Sheets'ten yükle ─────────────────────────────
         st.markdown("### 📋 Google Sheets'ten Yükle")
         st.caption("Sheets'te düzenledikten sonra buradan çıktı alabilirsiniz.")
