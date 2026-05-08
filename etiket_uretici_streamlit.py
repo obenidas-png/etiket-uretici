@@ -383,7 +383,7 @@ def push_to_siparis_sheet(orders_df):
         rows = []
         for _, row in orders_df.iterrows():
             rows.append([
-                "FALSE",
+                False,
                 str(row.get("Sipariş No","")),
                 str(row.get("Müşteri","")),
                 str(row.get("Mağaza","")),
@@ -402,7 +402,7 @@ def push_to_siparis_sheet(orders_df):
         ws.resize(rows=max(len(rows) + 50, 200))
         ws.batch_clear(["A2:Z2000"])
         if rows:
-            ws.update("A2", rows)
+            ws.update("A2", rows, value_input_option="RAW")
 
         return True, len(rows), 0
     except Exception as e:
