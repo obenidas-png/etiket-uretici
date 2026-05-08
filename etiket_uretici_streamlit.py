@@ -177,9 +177,16 @@ def fetch_pending_orders_for_store(store_code):
         st.warning(f"{store_code}: Bekleyen sipariş bulunamadı.")
         return pd.DataFrame()
 
-    # Kargo etiketi basılmış olanları çıkar (shipentegra_label dolu olanlar)
+    # Kargo etiketi basılmış olanları çıkar
+    # Kriter: last_labelled dolu VEYA my_tracking_number dolu VEYA shipentegra_label URL içeriyor
     before = len(all_pending)
-    all_pending_no_label = [o for o in all_pending if not str(o.get("shipentegra_label","")).strip()]
+    def has_label(o):
+        last_labelled = str(o.get("last_labelled") or "").strip()
+        my_tracking = str(o.get("my_tracking_number") or "").strip()
+        se_label = str(o.get("shipentegra_label") or "").strip()
+        return bool(last_labelled or my_tracking or (se_label and se_label.startswith("http")))
+
+    all_pending_no_label = [o for o in all_pending if not has_label(o)]
     filtered = before - len(all_pending_no_label)
     if filtered > 0:
         st.info(f"{store_code}: {filtered} siparişin kargo etiketi zaten basılmış, listeden çıkarıldı.")
@@ -425,14 +432,17 @@ def load_from_siparis_sheet(days=None, only_selected=True):
 
         if days and "Eklenme Tarihi" in df.columns:
             from datetime import timedelta
-            cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - timedelta(days=int(days))
+            cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - timedelta(days=int(days)) if days else None
             def parse_tr_date(s):
                 try:
                     return datetime.strptime(str(s).strip(), "%d.%m.%Y %H:%M").replace(tzinfo=ZoneInfo("Europe/Istanbul"))
                 except:
                     return None
             df["_date"] = df["Eklenme Tarihi"].apply(parse_tr_date)
-            df = df[df["_date"].notna() & (df["_date"] >= cutoff)].drop(columns=["_date"])
+            if cutoff:
+                df = df[df["_date"].notna() & (df["_date"] >= cutoff)].drop(columns=["_date"])
+            else:
+                df = df.drop(columns=["_date"])
             df = df.reset_index(drop=True)
 
         return df
@@ -1302,7 +1312,7 @@ def process_and_render(df, source_label=""):
 
         st.session_state[session_key] = orders_df.copy()
 
-    coklu_count = orders_df['Çoklu'].sum() if 'Çoklu' in orders_df.columns else 0
+    coklu_count = orders_df['Çoklu'].apply(lambda x: str(x).upper() in ['TRUE','1','DOĞRU']).sum() if 'Çoklu' in orders_df.columns else 0
     coklu_text = f" ({int(coklu_count)} çiftli sipariş)" if coklu_count > 0 else ""
     st.success(f"✅ {len(orders_df)} sipariş işlendi!{coklu_text} {source_label}")
 
@@ -1434,14 +1444,14 @@ def process_and_render(df, source_label=""):
             st.session_state[f"pending_print_{source_label}"] = (siparis_nos, magaza)
 
     # Özet
-    gecildi_count = orders_df['Durum'].apply(
+    gecildi_count = int(orders_df['Durum'].apply(
         lambda x: 'GEÇİLDİ' in str(x).upper()
-    ).sum() if 'Durum' in orders_df.columns else 0
+    ).sum()) if 'Durum' in orders_df.columns else 0
 
     st.markdown("### 📊 Özet")
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1: st.metric("Toplam Sipariş", len(orders_df))
-    with c2: st.metric("Kişiselleştirme", orders_df['Kişiselleştirme'].notna().sum())
+    with c2: st.metric("Kişiselleştirme", int(orders_df['Kişiselleştirme'].apply(lambda x: str(x).strip() not in ['','nan','None']).sum()))
     with c3: st.metric("Farklı Model", orders_df['Model'].nunique())
     with c4: st.metric("Yenileme", len(orders_df[orders_df['Model'] == 'YENİLEME']))
     with c5: st.metric("✅ Geçildi", int(gecildi_count))
