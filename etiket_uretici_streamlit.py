@@ -349,8 +349,9 @@ def load_orders_to_session(orders_df):
         return False
 
 
-SIPARIS_COLS = ["Seç", "Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Renk", "Model", "Ölçü",
+SIPARIS_COLS = ["Sipariş No", "Müşteri", "Mağaza", "Genişlik", "Renk", "Model", "Ölçü",
                "Kişiselleştirme", "Özel Not", "Durum", "Etiket", "Eklenme Tarihi"]
+SIPARIS_COLS_WITH_SEC = ["Seç"] + SIPARIS_COLS
 
 
 def get_siparis_sheet():
@@ -383,7 +384,7 @@ def push_to_siparis_sheet(orders_df):
         rows = []
         for _, row in orders_df.iterrows():
             rows.append([
-                False,
+                False,  # placeholder - not written to sheet
                 str(row.get("Sipariş No","")),
                 str(row.get("Müşteri","")),
                 str(row.get("Mağaza","")),
@@ -400,10 +401,12 @@ def push_to_siparis_sheet(orders_df):
 
         # Sayfayı temizle ve yeniden yaz (başlık + veri)
         ws.resize(rows=max(len(rows) + 50, 200))
-        ws.batch_clear(["A1:Z2000"])
-        ws.update("A1", [SIPARIS_COLS])
+        ws.batch_clear(["B1:Z2000"])
+        ws.update("B1", [SIPARIS_COLS])
         if rows:
-            ws.update("A2", rows, value_input_option="RAW")
+            # Seç sütununu (A) dokunmadan, sadece B'den yaz
+            data_rows = [r[1:] for r in rows]  # False sütununu çıkar
+            ws.update("B2", data_rows, value_input_option="RAW")
 
         return True, len(rows), 0
     except Exception as e:
@@ -423,8 +426,15 @@ def load_from_siparis_sheet(days=None, only_selected=True):
         headers = data[0]
         rows = data[1:]
         df = pd.DataFrame(rows, columns=headers)
-        # Sütun adlarını düzelt (boşluk vs.)
-        df.columns = [c.strip() for c in df.columns]
+        # A sütunu Seç (checkbox), B'den itibaren veri
+        if len(data) > 0 and len(data[0]) == len(SIPARIS_COLS):
+            # Eski format (Seç yok)
+            headers = data[0]
+        else:
+            # A = Seç, B'den itibaren SIPARIS_COLS
+            headers = ["Seç"] + SIPARIS_COLS
+            rows = [([r[0]] + r[1:len(SIPARIS_COLS)+1]) if len(r) > len(SIPARIS_COLS) else r for r in rows]
+        df.columns = [c.strip() for c in df.columns] if len(df.columns) == len(headers) else df.columns
         if "Sipariş No" in df.columns:
             df = df[df["Sipariş No"].astype(str).str.strip() != ""].reset_index(drop=True)
         # Sadece seçili olanları getir
