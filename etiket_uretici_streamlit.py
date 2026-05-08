@@ -391,12 +391,16 @@ def push_to_siparis_sheet(orders_df):
                 istanbul_now,
             ])
 
-        # Mevcut verileri çek, 3 günden eskilerini çıkar, yenilerle birleştir
         from datetime import timedelta
-        cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - timedelta(days=10)  # Sheets'te 10 gün tut
+        cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - timedelta(days=10)
 
         existing = ws.get_all_values()
         kept_rows = []
+        new_keys = set(
+            str(r[0]) + "_" + str(r[6]) + "_" + str(r[3])
+            for r in rows
+        )
+
         if len(existing) > 1:
             headers = existing[0]
             date_idx = headers.index("Eklenme Tarihi") if "Eklenme Tarihi" in headers else -1
@@ -404,32 +408,27 @@ def push_to_siparis_sheet(orders_df):
             olcu_idx = headers.index("Ölçü") if "Ölçü" in headers else 6
             gen_idx = headers.index("Genişlik") if "Genişlik" in headers else 3
 
-            # Yeni siparişlerin key'leri
-            new_keys = set(
-                str(r[0]) + "_" + str(r[6]) + "_" + str(r[3])
-                for r in rows
-            )
-
             for r in existing[1:]:
-                if not r or not r[no_idx]:
+                if not r or not str(r[0]).strip():
                     continue
-                # 3 günden eski mi?
-                if date_idx >= 0 and date_idx < len(r):
+                # 10 günden eski mi? çıkar
+                if date_idx >= 0 and date_idx < len(r) and str(r[date_idx]).strip():
                     try:
                         row_date = datetime.strptime(str(r[date_idx]).strip(), "%d.%m.%Y %H:%M").replace(tzinfo=ZoneInfo("Europe/Istanbul"))
                         if row_date < cutoff:
                             continue
                     except:
                         pass
-                # Yeni çekimde aynı key var mı? (güncellenir)
-                key = str(r[no_idx]) + "_" + str(r[olcu_idx] if olcu_idx < len(r) else "") + "_" + str(r[gen_idx] if gen_idx < len(r) else "")
+                # Yeni çekimde aynı key var mı? güncellenir, eski tutulmasın
+                key = str(r[no_idx]) + "_" + (str(r[olcu_idx]) if olcu_idx < len(r) else "") + "_" + (str(r[gen_idx]) if gen_idx < len(r) else "")
                 if key not in new_keys:
                     kept_rows.append(r)
 
         all_rows = kept_rows + rows
 
         # Sayfayı temizle ve yeniden yaz
-        ws.resize(rows=max(len(all_rows) + 10, 100))
+        total = len(all_rows)
+        ws.resize(rows=max(total + 50, 200))
         if len(existing) > 1:
             ws.delete_rows(2, len(existing))
         if all_rows:
