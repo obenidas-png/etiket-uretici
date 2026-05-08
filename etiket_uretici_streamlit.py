@@ -426,13 +426,12 @@ def push_to_siparis_sheet(orders_df):
 
         all_rows = kept_rows + rows
 
-        # Sayfayı temizle ve yeniden yaz
-        total = len(all_rows)
-        ws.resize(rows=max(total + 50, 200))
-        if len(existing) > 1:
-            ws.delete_rows(2, len(existing))
+        # Sayfayı temizle ve yeniden yaz — clear + update kullan
+        ws.resize(rows=max(len(all_rows) + 50, 200))
+        # Başlık hariç tüm içeriği temizle
+        ws.batch_clear([f"A2:Z{max(len(existing)+10, 200)}"])
         if all_rows:
-            ws.append_rows(all_rows)
+            ws.update(f"A2", all_rows)
 
         return True, len(rows), 0
     except Exception as e:
