@@ -1216,8 +1216,17 @@ def render_download_row(orders_df, label_suffix, key_suffix):
     state_key = f"files_{key_suffix}"
 
     if state_key not in st.session_state:
-        ts = datetime.now(ZoneInfo("Europe/Istanbul")).strftime('%Y%m%d_%H%M%S')
+        now = datetime.now(ZoneInfo("Europe/Istanbul"))
+        ts = now.strftime('%Y%m%d_%H%M%S')
+        date_prefix = now.strftime('%d-%m')
         store_name = orders_df['Mağaza'].iloc[0] if len(orders_df) > 0 else 'siparis'
+        # Birden fazla mağaza varsa hepsini listele
+        if 'Mağaza' in orders_df.columns:
+            magazalar = orders_df['Mağaza'].dropna().unique().tolist()
+            magaza_str = '-'.join(sorted(set(str(m) for m in magazalar if str(m) not in ['','nan'])))
+        else:
+            magaza_str = str(store_name)
+        file_prefix = f"{date_prefix}-{magaza_str}"
         with st.spinner("Dosyalar oluşturuluyor..."):
             pdf_buffer = create_pdf_labels(orders_df)
             lazer_pdf  = create_lazer_labels(orders_df)
@@ -1227,6 +1236,7 @@ def render_download_row(orders_df, label_suffix, key_suffix):
             zip_data = build_zip(orders_df, ts, key_suffix)
         st.session_state[state_key] = {
             "ts": ts,
+            "file_prefix": file_prefix,
             "store_name": store_name,
             "pdf": pdf_buffer.getvalue(),
             "lazer": lazer_pdf,
@@ -1239,12 +1249,13 @@ def render_download_row(orders_df, label_suffix, key_suffix):
     f = st.session_state[state_key]
     ts = f["ts"]
     store_name = f["store_name"]
+    fp = f.get("file_prefix", store_name)
     has_lazer = f["lazer"] is not None
 
     st.download_button(
         f"📦 {label_suffix} — TÜM DOSYALARI İNDİR (.zip)",
         data=f["zip"],
-        file_name=f"{store_name}_{ts}.zip",
+        file_name=f"{fp}-tum_dosyalar.zip",
         mime="application/zip",
         key=f"dl_zip_{key_suffix}",
         type="primary",
@@ -1256,24 +1267,24 @@ def render_download_row(orders_df, label_suffix, key_suffix):
     cols = st.columns(num_cols)
     with cols[0]:
         st.download_button("📄 Kargo Etiketleri", data=f["pdf"],
-            file_name=f"kargo_{ts}.pdf", mime="application/pdf",
+            file_name=f"{fp}-kargo_etiketleri.pdf", mime="application/pdf",
             key=f"dl_pdf_{key_suffix}", use_container_width=True)
     if has_lazer:
         with cols[1]:
             st.download_button("🟠 Lazer Etiketleri", data=f["lazer"],
-                file_name=f"lazer_{ts}.pdf", mime="application/pdf",
+                file_name=f"{fp}-lazer_etiketleri.pdf", mime="application/pdf",
                 key=f"dl_lazer_{key_suffix}", use_container_width=True)
     with cols[-3]:
         st.download_button("📝 Üretim Listesi", data=f["uretim"],
-            file_name=f"uretim_{ts}.txt", mime="text/plain",
+            file_name=f"{fp}-uretim_listesi.txt", mime="text/plain",
             key=f"dl_uretim_{key_suffix}", use_container_width=True)
     with cols[-2]:
         st.download_button("✍️ Kişiselleştirme", data=f["kisisel"],
-            file_name=f"kisisel_{ts}.txt", mime="text/plain",
+            file_name=f"{fp}-kisisellestime.txt", mime="text/plain",
             key=f"dl_kisisel_{key_suffix}", use_container_width=True)
     with cols[-1]:
         st.download_button("📋 Kontrol Listesi", data=f["kontrol"],
-            file_name=f"kontrol_{ts}.pdf", mime="application/pdf",
+            file_name=f"{fp}-kontrol_listesi.pdf", mime="application/pdf",
             key=f"dl_kontrol_{key_suffix}", use_container_width=True)
 
     if st.button("🔄 Yeniden oluştur", key=f"regen_{key_suffix}"):
