@@ -422,7 +422,8 @@ def load_from_siparis_sheet(days=None):
         df = df[df["Sipariş No"].str.strip() != ""].reset_index(drop=True)
 
         if days and "Eklenme Tarihi" in df.columns:
-            cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - pd.Timedelta(days=days)
+            from datetime import timedelta
+            cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - timedelta(days=int(days))
             def parse_tr_date(s):
                 try:
                     return datetime.strptime(str(s).strip(), "%d.%m.%Y %H:%M").replace(tzinfo=ZoneInfo("Europe/Istanbul"))
