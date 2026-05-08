@@ -436,6 +436,7 @@ def push_to_siparis_sheet(orders_df):
 
         return True, len(rows), 0
     except Exception as e:
+        st.error(f"Sheets yazma hatası: {e}")
         return False, 0, 0
 
 
