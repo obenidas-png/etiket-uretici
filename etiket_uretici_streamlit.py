@@ -426,11 +426,13 @@ def load_from_siparis_sheet(days=None, only_selected=True):
         headers = data[0]
         rows = data[1:]
         df = pd.DataFrame(rows, columns=headers)
+        # Sütun adlarını düzelt (boşluk vs.)
+        df.columns = [c.strip() for c in df.columns]
         if "Sipariş No" in df.columns:
-            df = df[df["Sipariş No"].str.strip() != ""].reset_index(drop=True)
+            df = df[df["Sipariş No"].astype(str).str.strip() != ""].reset_index(drop=True)
         # Sadece seçili olanları getir
         if only_selected and "Seç" in df.columns:
-            df = df[df["Seç"].str.upper().isin(["TRUE", "DOĞRU", "1", "TRUE"])].reset_index(drop=True)
+            df = df[df["Seç"].astype(str).str.upper().isin(["TRUE", "DOĞRU", "1"])].reset_index(drop=True)
             if df.empty:
                 return df
 
@@ -1622,7 +1624,7 @@ with tab1:
 
             if st.button("📥 Siparişler Sayfasını Yükle", key="load_from_sheets", type="primary", use_container_width=True):
                 with st.spinner("Sheets'ten yükleniyor..."):
-                    sheets_df = load_from_siparis_sheet(days=days_map[days_sel])
+                    sheets_df = load_from_siparis_sheet(days=days_map[days_sel], only_selected=False)
                 if sheets_df is not None and not sheets_df.empty:
                     if magaza_sel != "Tümü" and "Mağaza" in sheets_df.columns:
                         sheets_df = sheets_df[sheets_df["Mağaza"] == magaza_sel].reset_index(drop=True)
