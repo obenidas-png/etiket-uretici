@@ -391,47 +391,11 @@ def push_to_siparis_sheet(orders_df):
                 istanbul_now,
             ])
 
-        from datetime import timedelta
-        cutoff = datetime.now(ZoneInfo("Europe/Istanbul")) - timedelta(days=10)
-
-        existing = ws.get_all_values()
-        kept_rows = []
-        new_keys = set(
-            str(r[1]) + "_" + str(r[7]) + "_" + str(r[4])
-            for r in rows
-        )
-
-        if len(existing) > 1:
-            headers = existing[0]
-            date_idx = headers.index("Eklenme Tarihi") if "Eklenme Tarihi" in headers else -1
-            no_idx = headers.index("Sipariş No") if "Sipariş No" in headers else 1
-            olcu_idx = headers.index("Ölçü") if "Ölçü" in headers else 7
-            gen_idx = headers.index("Genişlik") if "Genişlik" in headers else 4
-
-            for r in existing[1:]:
-                if not r or not str(r[no_idx] if no_idx < len(r) else "").strip():
-                    continue
-                # 10 günden eski mi? çıkar
-                if date_idx >= 0 and date_idx < len(r) and str(r[date_idx]).strip():
-                    try:
-                        row_date = datetime.strptime(str(r[date_idx]).strip(), "%d.%m.%Y %H:%M").replace(tzinfo=ZoneInfo("Europe/Istanbul"))
-                        if row_date < cutoff:
-                            continue
-                    except:
-                        pass
-                # Yeni çekimde aynı key var mı? güncellenir, eski tutulmasın
-                key = str(r[no_idx] if no_idx < len(r) else "") + "_" + (str(r[olcu_idx]) if olcu_idx < len(r) else "") + "_" + (str(r[gen_idx]) if gen_idx < len(r) else "")
-                if key not in new_keys:
-                    kept_rows.append(r)
-
-        all_rows = kept_rows + rows
-
-        # Sayfayı temizle ve yeniden yaz — clear + update kullan
-        ws.resize(rows=max(len(all_rows) + 50, 200))
-        # Başlık hariç tüm içeriği temizle
-        ws.batch_clear([f"A2:Z{max(len(existing)+10, 200)}"])
-        if all_rows:
-            ws.update(f"A2", all_rows)
+        # Sayfayı temizle ve sadece yeni veriyi yaz
+        ws.resize(rows=max(len(rows) + 50, 200))
+        ws.batch_clear(["A2:Z2000"])
+        if rows:
+            ws.update("A2", rows)
 
         return True, len(rows), 0
     except Exception as e:
