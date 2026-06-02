@@ -23,6 +23,16 @@ st.set_page_config(page_title="Sipariş Takip Sistemi v2", page_icon="🏭", lay
 
 CSS = """
 <style>
+    .stApp [data-testid="stMainBlockContainer"],
+    .stMainBlockContainer,
+    .block-container,
+    section.main > div {
+        width: min(96vw, 1500px) !important;
+        max-width: min(96vw, 1500px) !important;
+        padding-top: 1.25rem !important;
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+    }
     .main-title {
         text-align: center;
         padding: 18px;
@@ -32,6 +42,9 @@ CSS = """
         margin-bottom: 24px;
     }
     .stButton>button { width: 100%; font-weight: 700; }
+    div[data-testid="stHorizontalBlock"] {
+        align-items: stretch;
+    }
     [data-testid="stFileUploader"] {
         background-color: #fff7ed;
         border: 2px dashed #f59e0b;
@@ -43,6 +56,9 @@ CSS = """
         border: 1px solid #e2e8f0;
         padding: 10px;
         border-radius: 8px;
+    }
+    [data-testid="stDataFrame"] {
+        width: 100%;
     }
 </style>
 """
@@ -86,7 +102,7 @@ def check_app_password() -> bool:
 
 
 def render_orders_tab():
-    left, right = st.columns([3, 1])
+    left, right = st.columns([5, 1.25], gap="large")
 
     with right:
         st.markdown("### Durum")
