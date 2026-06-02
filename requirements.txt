@@ -1,6 +1,7 @@
-streamlit
-pandas
-reportlab
-openpyxl
-gspread
-google-auth
+streamlit>=1.35
+pandas>=2.0
+openpyxl>=3.1
+requests>=2.31
+gspread>=6.0
+google-auth>=2.29
+reportlab>=4.0
